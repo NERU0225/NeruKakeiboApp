@@ -141,6 +141,7 @@
   .exp-body{flex:1;min-width:0;cursor:pointer}
   .exp-t{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .exp-s{font-size:12px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .exp-d{font-size:11px;color:var(--sub);margin-top:2px;font-variant-numeric:tabular-nums}
   .exp-amt{flex:none;font-size:15px;font-weight:600;padding-left:8px}
   .stag{display:inline-block;border-radius:5px;font-size:10px;padding:1px 6px;margin-right:6px;color:#fff}
   .stag.unclaimed{background:#E9A23B}
@@ -178,6 +179,16 @@
   .field label{width:3.6em;font-size:13px;color:var(--sub);flex:none}
   .field input,.field select{flex:1;border:none;background:none;outline:none;color:var(--text);padding:0;min-width:0}
   #fStore{font-size:17px;font-weight:600}
+  .suggest{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:-4px 0 8px;
+    overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+  .suggest button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;
+    background:none;border:none;border-top:1px solid var(--line);padding:11px 14px;cursor:pointer;
+    text-align:left;color:var(--text);font-family:var(--font);font-size:15px}
+  .suggest button:first-child{border-top:none}
+  .suggest button:active{background:var(--bg)}
+  .suggest .sg-sub{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums}
+  .suggest mark{background:#FFF1B8;color:inherit;border-radius:2px}
+  .nm-suggest{margin:2px 0 8px}
 
   .lines{margin:6px 0 0}
   .line{background:var(--bg);border-radius:10px;padding:9px 10px;margin-bottom:8px}
@@ -385,8 +396,8 @@
     <button type="button" data-type="expense" aria-pressed="true">支出</button>
     <button type="button" data-type="income" aria-pressed="false">収入</button>
   </div>
-  <div class="field"><label for="fStore" id="storeLabel">店名</label><input type="text" id="fStore" list="storeList" placeholder="セブンイレブン" maxlength="30"></div>
-  <datalist id="storeList"></datalist>
+  <div class="field" style="position:relative"><label for="fStore" id="storeLabel">店名</label><input type="text" id="fStore" placeholder="セブンイレブン" maxlength="30" autocomplete="off"></div>
+  <div class="suggest" id="storeSuggest" hidden></div>
   <div class="field"><label for="fDate">日付</label><input type="date" id="fDate"></div>
   <div class="field"><label for="fMemo">メモ</label><input type="text" id="fMemo" placeholder="任意" maxlength="40"></div>
   <p class="card-title" style="margin:16px 0 0">明細</p>
@@ -399,6 +410,10 @@
       <span class="exp-note">後で精算されるお金として記録します</span>
     </div>
     <button type="button" id="expToggle" class="switch" role="switch" aria-checked="false"><span></span></button>
+  </div>
+  <div id="expDatesWrap" hidden>
+    <div class="field"><label for="fClaimDate">申請日</label><input type="date" id="fClaimDate"></div>
+    <div class="field"><label for="fSettleDate">精算日</label><input type="date" id="fSettleDate"></div>
   </div>
   <div class="actions">
     <button class="btn btn-ghost" id="del" hidden>削除</button>
@@ -484,7 +499,36 @@ const cache={};
 let cur=new Date(), type='expense', editId=null, lines=[];
 let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC', csSubs=[];
 const openCats=new Set();
+let storeIndex=[], nameIndex=[];    // 過去入力の候補（頻度順）
+function buildSuggestIndex(){
+  const sc={}, nc={};
+  for(const y of Object.keys(cache)){
+    (cache[y].entries||[]).forEach(e=>{
+      if(e.store)sc[e.store]=(sc[e.store]||0)+1;
+      (e.items||[]).forEach(i=>{if(i.name)nc[i.name]=(nc[i.name]||0)+1});
+    });
+  }
+  const sort=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([v])=>v);
+  storeIndex=sort(sc);nameIndex=sort(nc);
+}
+const norm=s=>String(s||'').toLowerCase();
+function matchSuggest(pool,q,exclude){
+  const qq=norm(q);
+  const list=pool.filter(v=>v!==exclude);
+  if(!qq)return list.slice(0,8);                    // 空なら頻度順で少数
+  const starts=[], incl=[];
+  list.forEach(v=>{const n=norm(v);
+    if(n.startsWith(qq))starts.push(v);
+    else if(n.includes(qq))incl.push(v);});
+  return [...starts,...incl].slice(0,8);
+}
+function hilite(v,q){
+  const qq=norm(q);if(!qq)return esc(v);
+  const idx=norm(v).indexOf(qq);if(idx<0)return esc(v);
+  return esc(v.slice(0,idx))+'<mark>'+esc(v.slice(idx,idx+q.length))+'</mark>'+esc(v.slice(idx+q.length));
+}
 let entryExpense=false;              // 入力中の「経費」トグル状態
+let editStatus=null;                 // 編集中の記録の経費ステータス（新規はnull）
 let bookInclExp=true;               // 家計簿タブ：経費を含むか
 let expStatusFilter='unclaimed';    // 経費タブの表示状態
 const expSelected=new Set();        // 経費タブで選択中のID
@@ -628,8 +672,6 @@ async function render(){
   }).join('');
 
   renderManage();renderYears();
-  const st=[...new Set(d.entries.slice().reverse().map(e=>e.store).filter(Boolean))].slice(0,40);
-  $('storeList').innerHTML=st.map(s=>`<option value="${esc(s)}">`).join('');
   if(!$('tab-expense').hidden)renderExpense();
 }
 function groupHTML(es){
@@ -732,8 +774,9 @@ function drawLines(){
     return `
     <div class="line">
       <div class="line-a">
-        <input class="nm" data-i="${i}" data-f="name" value="${esc(l.name)}" placeholder="品名（例：海苔弁当）" maxlength="30">
+        <input class="nm" data-i="${i}" data-f="name" value="${esc(l.name)}" placeholder="品名（例：海苔弁当）" maxlength="30" autocomplete="off">
       </div>
+      <div class="suggest nm-suggest" data-sgi="${i}" hidden></div>
       <div class="line-b">
         <span class="qty-wrap">¥<input class="am" data-i="${i}" data-f="amount" type="number" inputmode="numeric" min="0" value="${l.amount}" placeholder="0"></span>
         <span class="qty-wrap">×<input class="qty" data-i="${i}" data-f="qty" type="number" inputmode="numeric" min="1" value="${l.qty||1}">個</span>
@@ -753,12 +796,33 @@ function refreshSub(i){
   const el=$('lines').querySelector(`[data-subtotal="${i}"]`);
   if(el)el.textContent=yen(lineSub(lines[i]));
 }
+function showNameSuggest(i){
+  const inp=$('lines').querySelector(`.nm[data-i="${i}"]`);
+  const box=$('lines').querySelector(`.nm-suggest[data-sgi="${i}"]`);
+  if(!inp||!box)return;
+  const q=inp.value, list=matchSuggest(nameIndex,q,'');
+  if(!list.length){box.hidden=true;return}
+  box.innerHTML=list.map(v=>`<button type="button" data-nm="${esc(v)}" data-row="${i}">${hilite(v,q)}</button>`).join('');
+  box.hidden=false;
+}
+function hideNameSuggest(i){
+  const box=$('lines').querySelector(`.nm-suggest[data-sgi="${i}"]`);
+  if(box)box.hidden=true;
+}
 $('lines').addEventListener('input',e=>{
   const t=e.target;if(t.dataset.i===undefined)return;
   const i=+t.dataset.i;
   lines[i][t.dataset.f]=t.dataset.f==='qty'?(Math.max(1,Math.floor(Number(t.value)||1))):t.value;
   if(t.dataset.f==='amount'||t.dataset.f==='qty'){refreshSub(i);sumLines()}
+  if(t.dataset.f==='name')showNameSuggest(i);
 });
+$('lines').addEventListener('focusin',e=>{
+  const t=e.target;if(t.classList.contains('nm'))showNameSuggest(+t.dataset.i);
+});
+$('lines').addEventListener('focusout',e=>{
+  const t=e.target;if(t.classList.contains('nm')){const i=+t.dataset.i;setTimeout(()=>hideNameSuggest(i),150)}
+});
+$('lines').addEventListener('mousedown',e=>{if(e.target.closest('.nm-suggest'))e.preventDefault()});
 $('lines').addEventListener('change',e=>{
   const t=e.target;if(t.dataset.i===undefined)return;
   const i=+t.dataset.i;
@@ -770,6 +834,12 @@ $('lines').addEventListener('change',e=>{
   }
 });
 $('lines').addEventListener('click',e=>{
+  const sg=e.target.closest('[data-nm]');
+  if(sg){const i=+sg.dataset.row;
+    lines[i].name=sg.dataset.nm;
+    const inp=$('lines').querySelector(`.nm[data-i="${i}"]`);
+    if(inp)inp.value=sg.dataset.nm;
+    hideNameSuggest(i);return}
   const b=e.target.closest('[data-rm]');if(!b)return;
   lines.splice(+b.dataset.rm,1);
   if(!lines.length)lines=[blank()];
@@ -790,9 +860,18 @@ $('typeSeg').onclick=e=>{
   $('expToggleWrap').style.display=type==='expense'?'':'none';
   drawLines();
 };
-function syncExpToggle(){$('expToggle').setAttribute('aria-checked',entryExpense?'true':'false')}
+function syncExpToggle(){
+  $('expToggle').setAttribute('aria-checked',entryExpense?'true':'false');
+  // 申請日・精算日欄は、経費オン かつ 既にその段階まで進んだ記録のときだけ出す
+  const showClaim=entryExpense&&(editStatus==='claimed'||editStatus==='settled');
+  const showSettle=entryExpense&&editStatus==='settled';
+  $('expDatesWrap').hidden=!(showClaim||showSettle);
+  $('fClaimDate').closest('.field').style.display=showClaim?'':'none';
+  $('fSettleDate').closest('.field').style.display=showSettle?'':'none';
+}
 $('expToggle').onclick=()=>{entryExpense=!entryExpense;syncExpToggle()};
 const today=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
+const md=s=>s?(+s.slice(5,7))+'/'+(+s.slice(8,10)):'';
 function openSheet(e){
   editId=e?e.id:null;
   type=e?e.type:'expense';
@@ -806,10 +885,31 @@ function openSheet(e){
   $('del').hidden=!e;
   $('saveBtn').textContent=e?'変更を保存':'保存';
   entryExpense=e?!!e.expense:false;
+  editStatus=e?(e.expense?(e.status||'unclaimed'):null):null;
+  $('fClaimDate').value=e&&e.claimDate?e.claimDate:'';
+  $('fSettleDate').value=e&&e.settleDate?e.settleDate:'';
   syncExpToggle();
   $('expToggleWrap').style.display=type==='expense'?'':'none';
+  buildSuggestIndex();
+  $('storeSuggest').hidden=true;
   drawLines();open($('sheet'));
 }
+/* ---- 店名サジェスト ---- */
+function showStoreSuggest(){
+  const q=$('fStore').value, list=matchSuggest(storeIndex,q,'');
+  const box=$('storeSuggest');
+  if(!list.length){box.hidden=true;return}
+  box.innerHTML=list.map(v=>`<button type="button" data-store="${esc(v)}">${hilite(v,q)}</button>`).join('');
+  box.hidden=false;
+}
+$('fStore').addEventListener('focus',showStoreSuggest);
+$('fStore').addEventListener('input',showStoreSuggest);
+$('fStore').addEventListener('blur',()=>setTimeout(()=>{$('storeSuggest').hidden=true},150));
+$('storeSuggest').addEventListener('mousedown',e=>e.preventDefault());
+$('storeSuggest').addEventListener('click',e=>{
+  const b=e.target.closest('[data-store]');if(!b)return;
+  $('fStore').value=b.dataset.store;$('storeSuggest').hidden=true;
+});
 $('fab').onclick=()=>openSheet(null);
 $('scrim').onclick=closeAll;
 document.onkeydown=e=>{if(e.key==='Escape')closeAll()};
@@ -835,12 +935,28 @@ $('saveBtn').onclick=async()=>{
   if(editId){
     const oy=Y(), od=await year(oy);
     const old=od.entries.find(x=>x.id===editId);
-    // 経費の状態は維持。オフ→オンで新規に立替になる場合はunclaimedから
-    data.status=expense?((old&&old.status)||'unclaimed'):undefined;
+    const status=expense?((old&&old.status)||'unclaimed'):undefined;
+    data.status=status;
+    if(expense){
+      // 状態に応じて日付を保持（編集欄の値を優先、無ければ元の値）
+      if(status==='claimed'||status==='settled')
+        data.claimDate=$('fClaimDate').value||(old&&old.claimDate)||today();
+      if(status==='settled')
+        data.settleDate=$('fSettleDate').value||(old&&old.settleDate)||today();
+    }
     if(ny!==oy){
       od.entries=od.entries.filter(x=>x.id!==editId);await saveYear(oy);
       const nd=await year(ny);nd.entries.push({id:editId,...data});await saveYear(ny);
-    }else{Object.assign(old,data);if(!expense)delete old.status;await saveYear(oy)}
+    }else{
+      // 経費オフや状態後退で不要になった日付を掃除
+      Object.assign(old,data);
+      if(!expense){delete old.status;delete old.claimDate;delete old.settleDate}
+      else{
+        if(status==='unclaimed'){delete old.claimDate;delete old.settleDate}
+        else if(status==='claimed')delete old.settleDate;
+      }
+      await saveYear(oy);
+    }
   }else{
     if(expense)data.status='unclaimed';
     const nd=await year(ny);nd.entries.push({id:Date.now(),...data});await saveYear(ny);
@@ -902,11 +1018,15 @@ async function renderExpense(){
     const title=e.store||uniq[0]||'（店名なし）';
     const sub=[one.name,uniq.join('・'),e.memo].filter(Boolean).join(' ・ ');
     const on=expSelected.has(e.id);
+    const dates=[`立替 ${md(e.date)}`];
+    if(e.claimDate)dates.push(`申請 ${md(e.claimDate)}`);
+    if(e.settleDate)dates.push(`精算 ${md(e.settleDate)}`);
     return `<div class="exp-item">
       <button class="exp-check" data-pick="${e.id}" aria-checked="${on}">${on?'✓':''}</button>
       <div class="exp-body" data-open="${e.id}" data-y="${e._y}">
         <div class="exp-t">${esc(title)}</div>
-        <div class="exp-s">${esc(e.date.slice(5).replace('-','/'))} ・ ${esc(sub)}</div>
+        <div class="exp-s">${esc(sub||'—')}</div>
+        <div class="exp-d">${dates.join(' ・ ')}</div>
       </div>
       <span class="exp-amt num">${yen(total(e))}</span>
     </div>`;
@@ -943,10 +1063,16 @@ $('expList').onclick=async e=>{
     if(en){cur=new Date(+op.dataset.y,+en.date.slice(5,7)-1,1);openSheet(en)}}
 };
 async function changeStatus(ids,to){
-  const set=new Set(ids);
+  const set=new Set(ids), t0=today();
   await eachYear(d=>{
     let t=false;
-    d.entries.forEach(e=>{if(set.has(e.id)&&isExp(e)){e.status=to;t=true}});
+    d.entries.forEach(e=>{if(set.has(e.id)&&isExp(e)){
+      e.status=to;
+      if(to==='claimed'){if(!e.claimDate)e.claimDate=t0;delete e.settleDate}
+      else if(to==='settled'){if(!e.claimDate)e.claimDate=t0;if(!e.settleDate)e.settleDate=t0}
+      else if(to==='unclaimed'){delete e.claimDate;delete e.settleDate}
+      t=true;
+    }});
     return t;
   });
   expSelected.clear();
