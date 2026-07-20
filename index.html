@@ -111,6 +111,45 @@
   .addcat{width:100%;background:var(--bg);border:1px dashed var(--line);border-radius:9px;color:var(--blue);
     font-size:14px;padding:11px;cursor:pointer;margin-top:12px}
 
+  /* 経費トグル */
+  .exp-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    background:var(--bg);border-radius:10px;padding:12px 14px;margin-top:14px}
+  .exp-label{display:block;font-size:14px;font-weight:600}
+  .exp-note{display:block;font-size:11px;color:var(--sub);margin-top:2px}
+  .switch{flex:none;width:50px;height:30px;border-radius:99px;border:none;background:var(--line);
+    position:relative;cursor:pointer;transition:background .2s ease;padding:0}
+  .switch span{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s ease}
+  .switch[aria-checked=true]{background:var(--green)}
+  .switch[aria-checked=true] span{transform:translateX(20px)}
+
+  /* 経費タブ */
+  .exp-summary{display:flex;text-align:center}
+  .exp-summary>div{flex:1}
+  .exp-summary span{display:block;font-size:11px;color:var(--sub);margin-bottom:3px}
+  .exp-summary b{font-size:17px;font-weight:600}
+  .exp-summary .remain b{color:var(--red)}
+  .exp-filter{display:flex;background:var(--bg);border-radius:9px;padding:3px;margin-bottom:12px}
+  .exp-filter button{flex:1;border:none;background:none;border-radius:7px;padding:8px 0;cursor:pointer;
+    font-size:13px;color:var(--sub);font-family:var(--font)}
+  .exp-filter button[aria-pressed=true]{background:var(--card);color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .exp-item{display:flex;align-items:center;gap:10px;padding:12px 4px;border-top:1px solid var(--line)}
+  .exp-item:first-child{border-top:none}
+  .exp-check{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);background:none;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .exp-check[aria-checked=true]{background:var(--blue);border-color:var(--blue)}
+  .exp-body{flex:1;min-width:0;cursor:pointer}
+  .exp-t{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .exp-s{font-size:12px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .exp-amt{flex:none;font-size:15px;font-weight:600;padding-left:8px}
+  .stag{display:inline-block;border-radius:5px;font-size:10px;padding:1px 6px;margin-right:6px;color:#fff}
+  .stag.unclaimed{background:#E9A23B}
+  .stag.claimed{background:#4C8BE8}
+  .stag.settled{background:#9AA3AC}
+  .exp-actionbar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
+    padding:12px 0 4px;margin-top:8px;display:flex;gap:8px}
+  .exp-actionbar .btn{flex:1;padding:12px}
+
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);
     border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
   .tabs button{flex:1;background:none;border:none;cursor:pointer;color:var(--sub);height:var(--tabh);
@@ -237,6 +276,10 @@
     </section>
 
     <section id="tab-book" hidden>
+      <div class="seg" id="expInclSeg" style="margin-bottom:12px">
+        <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
+        <button type="button" data-incl="0" aria-pressed="false">経費を除く</button>
+      </div>
       <div class="card">
         <p class="card-title">支出の内訳</p>
         <div class="donut-wrap">
@@ -246,6 +289,26 @@
         <div id="catList"></div>
       </div>
       <div id="history"></div>
+    </section>
+
+    <section id="tab-expense" hidden>
+      <div class="card">
+        <p class="card-title">立替の残額</p>
+        <div class="exp-summary num">
+          <div class="remain"><span>未精算</span><b id="expRemain">¥0</b></div>
+          <div><span>申請前</span><b id="expUnclaimed">¥0</b></div>
+          <div><span>申請中</span><b id="expClaimed">¥0</b></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="exp-filter" id="expFilter">
+          <button type="button" data-st="unclaimed" aria-pressed="true">申請前</button>
+          <button type="button" data-st="claimed" aria-pressed="false">申請中</button>
+          <button type="button" data-st="settled" aria-pressed="false">精算済</button>
+        </div>
+        <div id="expList"></div>
+        <div class="exp-actionbar" id="expActionbar" hidden></div>
+      </div>
     </section>
 
     <section id="tab-budget" hidden>
@@ -309,6 +372,7 @@
 <nav class="tabs" role="tablist">
   <button data-tab="home" role="tab" aria-selected="true"><i>☰</i>ホーム</button>
   <button data-tab="book" role="tab" aria-selected="false"><i>◕</i>家計簿</button>
+  <button data-tab="expense" role="tab" aria-selected="false"><i>↩</i>経費</button>
   <button data-tab="budget" role="tab" aria-selected="false"><i>◧</i>予算</button>
   <button data-tab="set" role="tab" aria-selected="false"><i>⚙</i>設定</button>
 </nav>
@@ -329,6 +393,13 @@
   <div class="lines" id="lines"></div>
   <button class="addline" id="addLine">＋ 明細を追加</button>
   <div class="total"><span>合計</span><b id="lineTotal">¥0</b></div>
+  <div class="exp-toggle" id="expToggleWrap">
+    <div>
+      <span class="exp-label">経費として立替</span>
+      <span class="exp-note">後で精算されるお金として記録します</span>
+    </div>
+    <button type="button" id="expToggle" class="switch" role="switch" aria-checked="false"><span></span></button>
+  </div>
   <div class="actions">
     <button class="btn btn-ghost" id="del" hidden>削除</button>
     <button class="btn btn-primary" id="saveBtn">保存</button>
@@ -413,6 +484,14 @@ const cache={};
 let cur=new Date(), type='expense', editId=null, lines=[];
 let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC', csSubs=[];
 const openCats=new Set();
+let entryExpense=false;              // 入力中の「経費」トグル状態
+let bookInclExp=true;               // 家計簿タブ：経費を含むか
+let expStatusFilter='unclaimed';    // 経費タブの表示状態
+const expSelected=new Set();        // 経費タブで選択中のID
+const STATUS={unclaimed:'申請前',claimed:'申請中',settled:'精算済'};
+const NEXT={unclaimed:'claimed',claimed:'settled'};
+const isExp=e=>e.expense&&e.type==='expense';
+const isOutstanding=e=>isExp(e)&&e.status!=='settled';  // 未精算
 
 const $=i=>document.getElementById(i);
 const yen=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
@@ -475,6 +554,10 @@ async function render(){
   $('sNet').textContent=(net<0?'−':'')+yen(Math.abs(net));
   $('sNet').classList.toggle('minus',net<0);
 
+  // 家計簿タブの内訳用：経費を含む/除くで切り替える支出集計
+  const bookEs=es.filter(e=>e.type==='expense'&&(bookInclExp||!isExp(e)));
+  const bookOut=bookEs.reduce((s,e)=>s+total(e),0);
+
   const b=d.budgets[k]||0, over=b&&out>b, pct=b?out/b*100:0;
   $('bRemain').innerHTML=b?((over?'−':'')+yen(Math.abs(b-out))+'<small>'+(over?'超過':'残り')+'</small>'):'<small>予算が未設定です</small>';
   $('bRemain').classList.toggle('over',!!over);
@@ -484,17 +567,17 @@ async function render(){
   $('bTotal').textContent=b?'予算 '+yen(b):'';
 
   const map={}, submap={};
-  es.filter(e=>e.type==='expense').forEach(e=>e.items.forEach(i=>{
+  bookEs.forEach(e=>e.items.forEach(i=>{
     map[i.category]=(map[i.category]||0)+lineSub(i);
     if(i.sub){submap[i.category]=submap[i.category]||{};
       submap[i.category][i.sub]=(submap[i.category][i.sub]||0)+lineSub(i)}
   }));
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
-  $('dTotal').textContent=yen(out);
+  $('dTotal').textContent=yen(bookOut);
   const ring='<circle cx="21" cy="21" r="15.9155" fill="none" stroke="#EDEFF2" stroke-width="5.2"/>';
   let off=0;
   $('donut').innerHTML=ring+(rows.length?rows.map(([c,v])=>{
-    const p=v/out*100;
+    const p=v/bookOut*100;
     const s=`<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${cmeta('expense',c).color}" stroke-width="5.2" stroke-dasharray="${p.toFixed(2)} ${(100-p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;
     off+=p;return s;
   }).join(''):'');
@@ -506,7 +589,7 @@ async function render(){
     const head=`<div class="crow ${subs.length?'has-sub':''}" ${subs.length?`data-cat="${esc(c)}"`:''}>
         <span class="dot" style="background:${col}"></span>
         <span class="cname">${subs.length?`<span class="caret ${open?'open':''}">▸</span>`:''}${esc(c)}</span>
-        <span class="cpct num">${Math.round(v/out*100)}%</span>
+        <span class="cpct num">${Math.round(v/bookOut*100)}%</span>
         <span class="camt num">${yen(v)}</span>
       </div>`;
     let body='';
@@ -547,6 +630,7 @@ async function render(){
   renderManage();renderYears();
   const st=[...new Set(d.entries.slice().reverse().map(e=>e.store).filter(Boolean))].slice(0,40);
   $('storeList').innerHTML=st.map(s=>`<option value="${esc(s)}">`).join('');
+  if(!$('tab-expense').hidden)renderExpense();
 }
 function groupHTML(es){
   const g={};es.forEach(e=>(g[e.date]=g[e.date]||[]).push(e));
@@ -570,10 +654,11 @@ function itemHTML(e){
   const nameQty=one?(one.name+((one.qty||1)>1?' ×'+one.qty:'')):'';
   const catLabel=one?(one.category+(one.sub?' › '+one.sub:'')):'';
   const sub=e.items.length>1?uniq.join('・'):[nameQty,catLabel].filter(Boolean).join(' ・ ');
+  const expBadge=isExp(e)?`<span class="stag ${e.status||'unclaimed'}">経費</span>`:'';
   return `<button class="item" data-id="${e.id}">
     <span class="icon" style="background:${m.color}1F">${m.icon}</span>
     <span class="i-main">
-      <span class="i-title">${esc(e.store||uniq[0]||'（店名なし）')}${e.items.length>1?`<span class="badge">${e.items.length}件</span>`:''}</span>
+      <span class="i-title">${expBadge}${esc(e.store||uniq[0]||'（店名なし）')}${e.items.length>1?`<span class="badge">${e.items.length}件</span>`:''}</span>
       <span class="i-sub">${esc(sub)}${e.memo?' ・ '+esc(e.memo):''}</span>
     </span>
     <span class="i-amt num ${e.type==='expense'?'out':'in'}">${e.type==='expense'?'−':'+'}${yen(total(e)).slice(1)}</span>
@@ -582,8 +667,9 @@ function itemHTML(e){
 
 /* ============ タブ / 月送り ============ */
 function showTab(n){
-  ['home','book','budget','set'].forEach(t=>$('tab-'+t).hidden=t!==n);
+  ['home','book','expense','budget','set'].forEach(t=>$('tab-'+t).hidden=t!==n);
   document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===n));
+  if(n==='expense'){expSelected.clear();renderExpense()}
   window.scrollTo(0,0);
 }
 document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('button');if(b)showTab(b.dataset.tab)};
@@ -594,6 +680,12 @@ $('catList').addEventListener('click',async e=>{
   if(openCats.has(c))openCats.delete(c);else openCats.add(c);
   await render();
 });
+$('expInclSeg').onclick=async e=>{
+  const b=e.target.closest('button');if(!b)return;
+  bookInclExp=b.dataset.incl==='1';
+  [...$('expInclSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  await render();
+};
 $('prev').onclick=async()=>{cur=new Date(Y(),cur.getMonth()-1,1);await render()};
 $('next').onclick=async()=>{cur=new Date(Y(),cur.getMonth()+1,1);await render()};
 
@@ -694,8 +786,12 @@ $('typeSeg').onclick=e=>{
   $('storeLabel').textContent=type==='expense'?'店名':'内容';
   $('fStore').placeholder=type==='expense'?'セブンイレブン':'勤務先など';
   lines.forEach(l=>{if(!cats(type).some(c=>c.name===l.category))l.category=(cats(type)[0]||FALLBACK).name});
+  if(type==='income'){entryExpense=false;syncExpToggle()}
+  $('expToggleWrap').style.display=type==='expense'?'':'none';
   drawLines();
 };
+function syncExpToggle(){$('expToggle').setAttribute('aria-checked',entryExpense?'true':'false')}
+$('expToggle').onclick=()=>{entryExpense=!entryExpense;syncExpToggle()};
 const today=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 function openSheet(e){
   editId=e?e.id:null;
@@ -709,6 +805,9 @@ function openSheet(e){
   $('fMemo').value=e?(e.memo||''):'';
   $('del').hidden=!e;
   $('saveBtn').textContent=e?'変更を保存':'保存';
+  entryExpense=e?!!e.expense:false;
+  syncExpToggle();
+  $('expToggleWrap').style.display=type==='expense'?'':'none';
   drawLines();open($('sheet'));
 }
 $('fab').onclick=()=>openSheet(null);
@@ -730,15 +829,20 @@ $('saveBtn').onclick=async()=>{
     })
     .filter(i=>i.amount>0);
   if(!items.length){toast('明細の金額を入力してください');return}
-  const data={date,type,store:$('fStore').value.trim(),memo:$('fMemo').value.trim(),items};
+  const expense=(type==='expense')&&entryExpense;
+  const data={date,type,store:$('fStore').value.trim(),memo:$('fMemo').value.trim(),items,expense};
   const ny=+date.slice(0,4);
   if(editId){
     const oy=Y(), od=await year(oy);
+    const old=od.entries.find(x=>x.id===editId);
+    // 経費の状態は維持。オフ→オンで新規に立替になる場合はunclaimedから
+    data.status=expense?((old&&old.status)||'unclaimed'):undefined;
     if(ny!==oy){
       od.entries=od.entries.filter(x=>x.id!==editId);await saveYear(oy);
       const nd=await year(ny);nd.entries.push({id:editId,...data});await saveYear(ny);
-    }else{Object.assign(od.entries.find(x=>x.id===editId),data);await saveYear(oy)}
+    }else{Object.assign(old,data);if(!expense)delete old.status;await saveYear(oy)}
   }else{
+    if(expense)data.status='unclaimed';
     const nd=await year(ny);nd.entries.push({id:Date.now(),...data});await saveYear(ny);
   }
   cur=new Date(ny,+date.slice(5,7)-1,1);
@@ -771,6 +875,91 @@ $('copyPrev').onclick=async()=>{
   if(pd.budgets[pk])d.budgets[k]=pd.budgets[pk];
   if(pd.catBudgets[pk])d.catBudgets[k]={...pd.catBudgets[pk]};
   await saveYear(Y());await render();toast('先月の予算をコピーしました');
+};
+
+/* ============ 経費 ============ */
+async function allExpenses(){
+  const out=[];
+  for(const y of meta.years){
+    const d=await year(y);
+    d.entries.forEach(e=>{if(isExp(e))out.push({...e,_y:y})});
+  }
+  return out;
+}
+async function renderExpense(){
+  const all=await allExpenses();
+  const sum=st=>all.filter(e=>(e.status||'unclaimed')===st).reduce((s,e)=>s+total(e),0);
+  const un=sum('unclaimed'), cl=sum('claimed');
+  $('expUnclaimed').textContent=yen(un);
+  $('expClaimed').textContent=yen(cl);
+  $('expRemain').textContent=yen(un+cl);
+
+  const list=all.filter(e=>(e.status||'unclaimed')===expStatusFilter)
+    .sort((a,b)=>a.date<b.date?1:-1);
+  $('expList').innerHTML=list.length?list.map(e=>{
+    const one=e.items[0]||{};
+    const uniq=[...new Set(e.items.map(i=>i.category))];
+    const title=e.store||uniq[0]||'（店名なし）';
+    const sub=[one.name,uniq.join('・'),e.memo].filter(Boolean).join(' ・ ');
+    const on=expSelected.has(e.id);
+    return `<div class="exp-item">
+      <button class="exp-check" data-pick="${e.id}" aria-checked="${on}">${on?'✓':''}</button>
+      <div class="exp-body" data-open="${e.id}" data-y="${e._y}">
+        <div class="exp-t">${esc(title)}</div>
+        <div class="exp-s">${esc(e.date.slice(5).replace('-','/'))} ・ ${esc(sub)}</div>
+      </div>
+      <span class="exp-amt num">${yen(total(e))}</span>
+    </div>`;
+  }).join(''):`<p class="empty">${STATUS[expStatusFilter]}の経費はありません</p>`;
+
+  // 一括操作バー
+  const bar=$('expActionbar');
+  const picks=[...expSelected];
+  if(picks.length&&expStatusFilter!=='settled'){
+    const nextLabel=expStatusFilter==='unclaimed'?'申請済にする':'精算済にする';
+    bar.hidden=false;
+    bar.innerHTML=`<button class="btn btn-sub" id="expClear">選択解除</button>
+      <button class="btn btn-primary" id="expAdvance">${picks.length}件を${nextLabel}</button>`;
+  }else if(picks.length&&expStatusFilter==='settled'){
+    bar.hidden=false;
+    bar.innerHTML=`<button class="btn btn-sub" id="expClear">選択解除</button>
+      <button class="btn btn-sub" id="expBack" style="color:var(--blue)">${picks.length}件を申請中に戻す</button>`;
+  }else{bar.hidden=true;bar.innerHTML=''}
+}
+$('expFilter').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  expStatusFilter=b.dataset.st;expSelected.clear();
+  [...$('expFilter').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  renderExpense();
+};
+$('expList').onclick=async e=>{
+  const pk=e.target.closest('[data-pick]');
+  if(pk){const id=+pk.dataset.pick;
+    if(expSelected.has(id))expSelected.delete(id);else expSelected.add(id);
+    renderExpense();return}
+  const op=e.target.closest('[data-open]');
+  if(op){const d=await year(+op.dataset.y);
+    const en=d.entries.find(x=>x.id===+op.dataset.open);
+    if(en){cur=new Date(+op.dataset.y,+en.date.slice(5,7)-1,1);openSheet(en)}}
+};
+async function changeStatus(ids,to){
+  const set=new Set(ids);
+  await eachYear(d=>{
+    let t=false;
+    d.entries.forEach(e=>{if(set.has(e.id)&&isExp(e)){e.status=to;t=true}});
+    return t;
+  });
+  expSelected.clear();
+  await render();  // 経費タブ表示中はrender内でrenderExpenseも走る
+}
+$('expActionbar').onclick=async e=>{
+  if(e.target.closest('#expClear')){expSelected.clear();renderExpense();return}
+  if(e.target.closest('#expAdvance')){
+    await changeStatus([...expSelected],NEXT[expStatusFilter]);
+    toast('状態を変更しました');return}
+  if(e.target.closest('#expBack')){
+    await changeStatus([...expSelected],'claimed');
+    toast('申請中に戻しました');return}
 };
 
 /* ============ カテゴリ管理 ============ */
