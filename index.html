@@ -69,6 +69,12 @@
 
   .crow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
   .crow:first-child{border-top:none}
+  .crow.has-sub{cursor:pointer}
+  .caret{display:inline-block;color:var(--sub);font-size:10px;margin-right:5px;transition:transform .15s ease}
+  .caret.open{transform:rotate(90deg)}
+  .subrow{display:flex;align-items:center;gap:10px;padding:7px 0 7px 19px;background:#FAFBFC}
+  .subrow .cname{font-size:13px;color:var(--sub)}
+  .subrow .camt{font-size:13px;font-weight:500}
   .dot{width:9px;height:9px;border-radius:50%;flex:none}
   .cname{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cpct{font-size:12px;color:var(--sub);width:3em;text-align:right}
@@ -138,12 +144,17 @@
   .line{background:var(--bg);border-radius:10px;padding:9px 10px;margin-bottom:8px}
   .line-a{display:flex;gap:8px;align-items:center;margin-bottom:7px}
   .line-a input.nm{flex:1;min-width:0;border:none;background:none;outline:none;padding:2px 0}
-  .line-a .yen{color:var(--sub);font-size:13px}
-  .line-a input.am{width:5.6em;text-align:right;border:none;background:none;outline:none;
+  .line-b{display:flex;gap:8px;align-items:center;margin-bottom:7px}
+  .line-b .qty-wrap{display:flex;align-items:center;gap:3px;color:var(--sub);font-size:13px}
+  .line-b input.am{width:5.4em;text-align:right;border:none;background:none;outline:none;
     font-weight:600;font-variant-numeric:tabular-nums;padding:2px 0}
-  .line-b{display:flex;gap:8px;align-items:center}
-  .line-b select{flex:1;min-width:0;color:var(--text);border:1px solid var(--line);border-radius:7px;background:var(--card);padding:7px 8px}
-  .line-b .rm{background:none;border:none;color:var(--sub);font-size:15px;cursor:pointer;padding:6px 8px;line-height:1}
+  .line-b input.qty{width:2.6em;text-align:right;border:none;background:none;outline:none;
+    font-variant-numeric:tabular-nums;padding:2px 0;color:var(--text)}
+  .line-b .sub{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap}
+  .line-c{display:flex;gap:8px;align-items:center}
+  .line-c select{flex:1;min-width:0;color:var(--text);border:1px solid var(--line);border-radius:7px;background:var(--card);padding:7px 8px}
+  .line-c select[data-f="sub"]{flex:0 1 40%;color:var(--sub)}
+  .line-c .rm{background:none;border:none;color:var(--sub);font-size:15px;cursor:pointer;padding:6px 8px;line-height:1}
   .addline{width:100%;background:none;border:1px dashed var(--line);border-radius:9px;color:var(--blue);
     font-size:13px;padding:10px;cursor:pointer}
   .total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--line);margin-top:12px;padding-top:12px}
@@ -156,6 +167,13 @@
   .picker button[aria-pressed=true]{border-color:var(--blue);border-width:2px;background:#F0F7FE}
   .picker.colors button{border-radius:50%;width:32px;height:32px;border:2px solid transparent}
   .picker.colors button[aria-pressed=true]{border-color:var(--text)}
+  .subrow-edit{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+  .subrow-edit:first-child{border-top:none}
+  .subrow-edit .sname{flex:1;font-size:14px}
+  .subrow-edit .sdel{background:none;border:none;color:var(--sub);font-size:15px;cursor:pointer;padding:4px 6px}
+  .subadd{display:flex;gap:8px;margin-top:8px}
+  .subadd input{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:var(--bg)}
+  .subadd .btn{flex:0 0 auto;padding:9px 16px}
 
   /* 年月ジャンプ */
   .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
@@ -172,9 +190,11 @@
   .btn-sub{background:var(--bg);color:var(--text)}
   .yearsel{border:1px solid var(--line);border-radius:7px;padding:7px 8px;background:var(--card);color:var(--text)}
 
-  .toast{position:fixed;left:50%;bottom:calc(var(--tabh) + 24px);transform:translateX(-50%) translateY(90px);
-    background:#25292E;color:#fff;font-size:13px;padding:10px 18px;border-radius:8px;z-index:10;transition:transform .25s ease}
-  .toast.show{transform:translateX(-50%) translateY(0)}
+  .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 10px);transform:translateX(-50%) translateY(-16px);
+    background:#25292E;color:#fff;font-size:13px;padding:10px 18px;border-radius:99px;z-index:20;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:0;pointer-events:none;
+    transition:opacity .22s ease, transform .22s ease}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -323,6 +343,14 @@
   <div class="picker" id="csIcons"></div>
   <p class="hint" style="margin:14px 0 6px">色</p>
   <div class="picker colors" id="csColors"></div>
+  <div id="csSubWrap" hidden>
+    <p class="hint" style="margin:16px 0 6px">サブカテゴリ（任意）</p>
+    <div id="csSubList"></div>
+    <div class="subadd">
+      <input type="text" id="csSubInput" placeholder="例：飲み物" maxlength="12">
+      <button type="button" class="btn btn-sub" id="csSubAdd">追加</button>
+    </div>
+  </div>
   <div class="actions">
     <button class="btn btn-ghost" id="csDel" hidden>削除</button>
     <button class="btn btn-primary" id="csSave">保存</button>
@@ -345,12 +373,12 @@
 /* ============ 定数 ============ */
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
-  expense:[['食費','🍚','#F2725C'],['日用品','🧴','#F0A03C'],['住居','🏠','#8B6FD4'],
-    ['水道光熱','💡','#3EA8C4'],['通信','📱','#4C8BE8'],['交通','🚃','#38B08A'],
-    ['医療','💊','#E86B9E'],['教育','📚','#6C7BD9'],['娯楽','🎮','#E5B93C'],
-    ['交際','🍻','#C4784E'],['衣服','👕','#5FBF7A'],['その他','📦','#9AA3AC']],
-  income:[['給与','💰','#1279D4'],['賞与','🎁','#17A673'],['副収入','💻','#4C8BE8'],
-    ['臨時収入','✨','#E5B93C'],['その他','📦','#9AA3AC']]
+  expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
+    ['水道光熱','💡','#3EA8C4',['電気','ガス','水道']],['通信','📱','#4C8BE8',[]],['交通','🚃','#38B08A',[]],
+    ['医療','💊','#E86B9E',[]],['教育','📚','#6C7BD9',[]],['娯楽','🎮','#E5B93C',[]],
+    ['交際','🍻','#C4784E',[]],['衣服','👕','#5FBF7A',[]],['その他','📦','#9AA3AC',[]]],
+  income:[['給与','💰','#1279D4',[]],['賞与','🎁','#17A673',[]],['副収入','💻','#4C8BE8',[]],
+    ['臨時収入','✨','#E5B93C',[]],['その他','📦','#9AA3AC',[]]]
 };
 const ICONS=['🍚','🍜','🍞','🍎','☕','🍻','🚬','🍰','🧴','🧻','🏠','🔑','💡','🚿','📱','💻','🚃','🚗','⛽','💊','🏥','📚','✏️','🎮','🎬','🎵','👕','👟','💄','💇','🎁','✈️','🏨','🐶','🧒','💰','📈','🏦','💳','🧾','🎫','✨','📦','🎂'];
 const COLORS=['#F2725C','#F0A03C','#E5B93C','#5FBF7A','#38B08A','#3EA8C4','#4C8BE8','#1279D4','#6C7BD9','#8B6FD4','#E86B9E','#C4784E','#9AA3AC','#5A6470'];
@@ -383,23 +411,28 @@ const store={
 let meta={cats:null,years:[]};
 const cache={};
 let cur=new Date(), type='expense', editId=null, lines=[];
-let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC';
+let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC', csSubs=[];
+const openCats=new Set();
 
 const $=i=>document.getElementById(i);
 const yen=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
 const mkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900)};
+let toastTimer=null;
+const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1900)};
 const cats=t=>(meta.cats&&meta.cats[t])||[];
 const cmeta=(t,n)=>cats(t).find(c=>c.name===n)||FALLBACK;
-const total=e=>e.items.reduce((s,i)=>s+i.amount,0);
+const subsOf=(t,n)=>{const c=cats(t).find(x=>x.name===n);return (c&&c.subs)||[]};
+const lineSub=i=>Math.round((Number(i.amount)||0)*(i.qty||1));
+const total=e=>e.items.reduce((s,i)=>s+lineSub(i),0);
 const Y=()=>cur.getFullYear();
-const blank=()=>({name:'',amount:'',category:(cats(type)[0]||FALLBACK).name});
+const blank=()=>({name:'',amount:'',qty:1,category:(cats(type)[0]||FALLBACK).name,sub:''});
 
 function seedCats(){
   meta.cats={};
   for(const t of ['expense','income'])
-    meta.cats[t]=DEFAULTS[t].map(([name,icon,color])=>({name,icon,color}));
+    meta.cats[t]=DEFAULTS[t].map(([name,icon,color,subs])=>({name,icon,color,subs:subs?[...subs]:[]}));
 }
 async function year(y){
   if(!cache[y]) cache[y]=await store.get(YK(y))||{entries:[],budgets:{},catBudgets:{}};
@@ -420,7 +453,7 @@ async function migrate(){
   const slot=y=>byY[y]=byY[y]||{entries:[],budgets:{},catBudgets:{}};
   old.entries.forEach(e=>{
     slot(+e.date.slice(0,4)).entries.push({id:e.id,date:e.date,type:e.type,store:e.store||'',memo:'',
-      items:[{name:e.memo||'',category:e.category,amount:e.amount}]});
+      items:[{name:e.memo||'',category:e.category,amount:e.amount,qty:1}]});
   });
   for(const [k,v] of Object.entries(old.budgets||{}))slot(+k.slice(0,4)).budgets[k]=v;
   for(const [k,v] of Object.entries(old.catBudgets||{}))slot(+k.slice(0,4)).catBudgets[k]=v;
@@ -450,8 +483,12 @@ async function render(){
   $('bUsed').textContent=b?Math.round(pct)+'% 使用':'';
   $('bTotal').textContent=b?'予算 '+yen(b):'';
 
-  const map={};
-  es.filter(e=>e.type==='expense').forEach(e=>e.items.forEach(i=>map[i.category]=(map[i.category]||0)+i.amount));
+  const map={}, submap={};
+  es.filter(e=>e.type==='expense').forEach(e=>e.items.forEach(i=>{
+    map[i.category]=(map[i.category]||0)+lineSub(i);
+    if(i.sub){submap[i.category]=submap[i.category]||{};
+      submap[i.category][i.sub]=(submap[i.category][i.sub]||0)+lineSub(i)}
+  }));
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   $('dTotal').textContent=yen(out);
   const ring='<circle cx="21" cy="21" r="15.9155" fill="none" stroke="#EDEFF2" stroke-width="5.2"/>';
@@ -461,13 +498,29 @@ async function render(){
     const s=`<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${cmeta('expense',c).color}" stroke-width="5.2" stroke-dasharray="${p.toFixed(2)} ${(100-p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;
     off+=p;return s;
   }).join(''):'');
-  $('catList').innerHTML=rows.length?rows.map(([c,v])=>`
-    <div class="crow">
-      <span class="dot" style="background:${cmeta('expense',c).color}"></span>
-      <span class="cname">${esc(c)}</span>
-      <span class="cpct num">${Math.round(v/out*100)}%</span>
-      <span class="camt num">${yen(v)}</span>
-    </div>`).join(''):'<p class="empty">支出の記録があると内訳が出ます</p>';
+  $('catList').innerHTML=rows.length?rows.map(([c,v])=>{
+    const subs=submap[c]?Object.entries(submap[c]).sort((a,b)=>b[1]-a[1]):[];
+    const col=cmeta('expense',c).color;
+    const known=v-subs.reduce((s,[,sv])=>s+sv,0); // サブ未設定ぶん
+    const open=openCats.has(c);
+    const head=`<div class="crow ${subs.length?'has-sub':''}" ${subs.length?`data-cat="${esc(c)}"`:''}>
+        <span class="dot" style="background:${col}"></span>
+        <span class="cname">${subs.length?`<span class="caret ${open?'open':''}">▸</span>`:''}${esc(c)}</span>
+        <span class="cpct num">${Math.round(v/out*100)}%</span>
+        <span class="camt num">${yen(v)}</span>
+      </div>`;
+    let body='';
+    if(subs.length&&open){
+      body=subs.map(([s,sv])=>`<div class="subrow">
+          <span class="cname">${esc(s)}</span>
+          <span class="cpct num">${Math.round(sv/v*100)}%</span>
+          <span class="camt num">${yen(sv)}</span>
+        </div>`).join('');
+      if(known>0)body+=`<div class="subrow"><span class="cname">その他・未設定</span>
+          <span class="cpct num">${Math.round(known/v*100)}%</span><span class="camt num">${yen(known)}</span></div>`;
+    }
+    return head+body;
+  }).join(''):'<p class="empty">支出の記録があると内訳が出ます</p>';
 
   $('history').innerHTML=es.length?groupHTML(es):'<div class="card"><p class="empty">この月の記録はまだありません</p></div>';
   $('recent').innerHTML=es.length?'<div class="items">'+es.slice(0,5).map(itemHTML).join('')+'</div>':'<p class="empty">「＋」から入力できます</p>';
@@ -513,7 +566,10 @@ function groupHTML(es){
 function itemHTML(e){
   const m=cmeta(e.type,e.items[0]?e.items[0].category:'');
   const uniq=[...new Set(e.items.map(i=>i.category))];
-  const sub=e.items.length>1?uniq.join('・'):[e.items[0]&&e.items[0].name,uniq[0]].filter(Boolean).join(' ・ ');
+  const one=e.items[0];
+  const nameQty=one?(one.name+((one.qty||1)>1?' ×'+one.qty:'')):'';
+  const catLabel=one?(one.category+(one.sub?' › '+one.sub:'')):'';
+  const sub=e.items.length>1?uniq.join('・'):[nameQty,catLabel].filter(Boolean).join(' ・ ');
   return `<button class="item" data-id="${e.id}">
     <span class="icon" style="background:${m.color}1F">${m.icon}</span>
     <span class="i-main">
@@ -532,6 +588,12 @@ function showTab(n){
 }
 document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('button');if(b)showTab(b.dataset.tab)};
 document.body.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g)showTab(g.dataset.goto)});
+$('catList').addEventListener('click',async e=>{
+  const row=e.target.closest('.crow.has-sub');if(!row)return;
+  const c=row.dataset.cat;
+  if(openCats.has(c))openCats.delete(c);else openCats.add(c);
+  await render();
+});
 $('prev').onclick=async()=>{cur=new Date(Y(),cur.getMonth()-1,1);await render()};
 $('next').onclick=async()=>{cur=new Date(Y(),cur.getMonth()+1,1);await render()};
 
@@ -563,30 +625,57 @@ $('mGrid').onclick=async e=>{
 };
 
 /* ============ 入力 ============ */
+function catOpts(sel){
+  return cats(type).map(x=>`<option value="${esc(x.name)}" ${x.name===sel?'selected':''}>${x.icon} ${esc(x.name)}</option>`).join('');
+}
+function subOpts(cat,sel){
+  const subs=subsOf(type,cat);
+  if(!subs.length)return '';
+  return `<option value="">サブ（任意）</option>`+
+    subs.map(s=>`<option value="${esc(s)}" ${s===sel?'selected':''}>${esc(s)}</option>`).join('');
+}
 function drawLines(){
-  const opts=c=>cats(type).map(x=>`<option value="${esc(x.name)}" ${x.name===c?'selected':''}>${x.icon} ${esc(x.name)}</option>`).join('');
-  $('lines').innerHTML=lines.map((l,i)=>`
+  $('lines').innerHTML=lines.map((l,i)=>{
+    const subs=subsOf(type,l.category);
+    return `
     <div class="line">
       <div class="line-a">
         <input class="nm" data-i="${i}" data-f="name" value="${esc(l.name)}" placeholder="品名（例：海苔弁当）" maxlength="30">
-        <span class="yen">¥</span>
-        <input class="am num" data-i="${i}" data-f="amount" type="number" inputmode="numeric" min="0" value="${l.amount}" placeholder="0">
       </div>
       <div class="line-b">
-        <select data-i="${i}" data-f="category">${opts(l.category)}</select>
+        <span class="qty-wrap">¥<input class="am" data-i="${i}" data-f="amount" type="number" inputmode="numeric" min="0" value="${l.amount}" placeholder="0"></span>
+        <span class="qty-wrap">×<input class="qty" data-i="${i}" data-f="qty" type="number" inputmode="numeric" min="1" value="${l.qty||1}">個</span>
+        <span class="sub" data-subtotal="${i}">${yen(lineSub(l))}</span>
+      </div>
+      <div class="line-c">
+        <select data-i="${i}" data-f="category">${catOpts(l.category)}</select>
+        ${subs.length?`<select data-i="${i}" data-f="sub">${subOpts(l.category,l.sub)}</select>`:''}
         <button type="button" class="rm" data-rm="${i}" aria-label="この明細を消す">✕</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   sumLines();
 }
-const sumLines=()=>$('lineTotal').textContent=yen(lines.reduce((s,l)=>s+(Number(l.amount)||0),0));
+const sumLines=()=>$('lineTotal').textContent=yen(lines.reduce((s,l)=>s+lineSub(l),0));
+function refreshSub(i){
+  const el=$('lines').querySelector(`[data-subtotal="${i}"]`);
+  if(el)el.textContent=yen(lineSub(lines[i]));
+}
 $('lines').addEventListener('input',e=>{
   const t=e.target;if(t.dataset.i===undefined)return;
-  lines[+t.dataset.i][t.dataset.f]=t.value;
-  if(t.dataset.f==='amount')sumLines();
+  const i=+t.dataset.i;
+  lines[i][t.dataset.f]=t.dataset.f==='qty'?(Math.max(1,Math.floor(Number(t.value)||1))):t.value;
+  if(t.dataset.f==='amount'||t.dataset.f==='qty'){refreshSub(i);sumLines()}
 });
 $('lines').addEventListener('change',e=>{
-  const t=e.target;if(t.dataset.f==='category')lines[+t.dataset.i].category=t.value;
+  const t=e.target;if(t.dataset.i===undefined)return;
+  const i=+t.dataset.i;
+  if(t.dataset.f==='category'){
+    lines[i].category=t.value;lines[i].sub='';  // メインを変えたらサブは解除
+    drawLines();  // サブ欄の出し入れのため再描画
+  }else if(t.dataset.f==='sub'){
+    lines[i].sub=t.value;
+  }
 });
 $('lines').addEventListener('click',e=>{
   const b=e.target.closest('[data-rm]');if(!b)return;
@@ -614,7 +703,7 @@ function openSheet(e){
   [...$('typeSeg').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.type===type));
   $('storeLabel').textContent=type==='expense'?'店名':'内容';
   $('fStore').placeholder=type==='expense'?'セブンイレブン':'勤務先など';
-  lines=e?e.items.map(i=>({...i})):[blank()];
+  lines=e?e.items.map(i=>({...i,qty:i.qty||1,sub:i.sub||''})):[blank()];
   $('fStore').value=e?(e.store||''):'';
   $('fDate').value=e?e.date:today();
   $('fMemo').value=e?(e.memo||''):'';
@@ -634,7 +723,11 @@ document.body.addEventListener('click',async e=>{
 $('saveBtn').onclick=async()=>{
   const date=$('fDate').value;
   if(!date){toast('日付を入力してください');return}
-  const items=lines.map(l=>({name:l.name.trim(),category:l.category,amount:Math.floor(Number(l.amount)||0)}))
+  const items=lines.map(l=>{
+      const sub=(l.sub&&subsOf(type,l.category).includes(l.sub))?l.sub:'';
+      return {name:l.name.trim(),category:l.category,sub,
+        amount:Math.floor(Number(l.amount)||0),qty:Math.max(1,Math.floor(Number(l.qty)||1))};
+    })
     .filter(i=>i.amount>0);
   if(!items.length){toast('明細の金額を入力してください');return}
   const data={date,type,store:$('fStore').value.trim(),memo:$('fMemo').value.trim(),items};
@@ -692,7 +785,7 @@ function renderManage(){
   $('mgList').innerHTML=l.map((c,i)=>`
     <div class="mrow">
       <span class="icon" style="background:${c.color}1F">${c.icon}</span>
-      <span class="cname">${esc(c.name)}</span>
+      <span class="cname">${esc(c.name)}${c.subs&&c.subs.length?`<span class="badge">サブ${c.subs.length}</span>`:''}</span>
       <button class="move" data-mv="${i}" data-dir="-1" ${i===0?'disabled':''} aria-label="上へ">▲</button>
       <button class="move" data-mv="${i}" data-dir="1" ${i===l.length-1?'disabled':''} aria-label="下へ">▼</button>
       <button class="edit" data-ed="${i}">編集</button>
@@ -708,10 +801,31 @@ $('mgList').onclick=async e=>{
 $('addCat').onclick=()=>openCatSheet(null);
 function openCatSheet(c){
   csEdit=c?c.name:null;csIcon=c?c.icon:'📦';csColor=c?c.color:'#9AA3AC';
+  csSubs=c&&c.subs?[...c.subs]:[];
   $('csTitle').textContent=c?'カテゴリを編集':'カテゴリを追加';
   $('csName').value=c?c.name:'';$('csDel').hidden=!c;
-  drawPickers();open($('catSheet'));
+  $('csSubWrap').hidden=!c;         // 追加時は保存後にサブを足せる（新規は一旦名前だけ）
+  $('csSubInput').value='';
+  drawPickers();drawSubs();open($('catSheet'));
 }
+function drawSubs(){
+  $('csSubList').innerHTML=csSubs.length?csSubs.map((s,i)=>`
+    <div class="subrow-edit">
+      <span class="sname">${esc(s)}</span>
+      <button type="button" class="sdel" data-sd="${i}" aria-label="削除">✕</button>
+    </div>`).join(''):'<p class="hint" style="padding:6px 0">まだありません</p>';
+}
+$('csSubList').onclick=e=>{
+  const b=e.target.closest('[data-sd]');if(!b)return;
+  csSubs.splice(+b.dataset.sd,1);drawSubs();
+};
+$('csSubAdd').onclick=()=>{
+  const v=$('csSubInput').value.trim();
+  if(!v)return;
+  if(csSubs.includes(v)){toast('同じサブがあります');return}
+  csSubs.push(v);$('csSubInput').value='';drawSubs();$('csSubInput').focus();
+};
+$('csSubInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('csSubAdd').click()}};
 function drawPickers(){
   $('csIcons').innerHTML=ICONS.map(i=>`<button type="button" data-i="${i}" aria-pressed="${i===csIcon}">${i}</button>`).join('');
   $('csColors').innerHTML=COLORS.map(c=>`<button type="button" data-c="${c}" style="background:${c}" aria-pressed="${c===csColor}" aria-label="${c}"></button>`).join('');
@@ -734,8 +848,18 @@ $('csSave').onclick=async()=>{
         return t;
       });
     }
-    Object.assign(cats(mgType).find(x=>x.name===csEdit),{name,icon:csIcon,color:csColor});
-  }else meta.cats[mgType].push({name,icon:csIcon,color:csColor});
+    // 削除されたサブに紐づく明細は、サブだけ外す（メインは残す）
+    const removed=(cats(mgType).find(x=>x.name===csEdit).subs||[]).filter(s=>!csSubs.includes(s));
+    if(removed.length){
+      await eachYear(d=>{
+        let t=false;
+        d.entries.forEach(e=>{if(e.type===mgType)e.items.forEach(i=>{
+          if(i.category===name&&removed.includes(i.sub)){i.sub='';t=true}})});
+        return t;
+      });
+    }
+    Object.assign(cats(mgType).find(x=>x.name===csEdit),{name,icon:csIcon,color:csColor,subs:[...csSubs]});
+  }else meta.cats[mgType].push({name,icon:csIcon,color:csColor,subs:[]});
   await saveMeta();closeAll();await render();toast(csEdit?'変更しました':'追加しました');
 };
 $('csDel').onclick=async()=>{
@@ -819,6 +943,11 @@ $('wipe').onclick=async()=>{
   meta=await store.get(MK)||{cats:null,years:[]};
   if(!meta.years)meta.years=[];
   if(!meta.cats){seedCats();await migrate();await saveMeta()}
+  else{ // 旧データにsubs配列を補完
+    let patched=false;
+    for(const t of ['expense','income'])(meta.cats[t]||[]).forEach(c=>{if(!c.subs){c.subs=[];patched=true}});
+    if(patched)await saveMeta();
+  }
   await year(Y());
   await render();
 })();
