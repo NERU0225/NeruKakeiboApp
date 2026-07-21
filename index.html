@@ -153,10 +153,35 @@
 
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);
     border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-  .tabs button{flex:1;background:none;border:none;cursor:pointer;color:var(--sub);height:var(--tabh);
-    font-size:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .tabs button{flex:1;min-width:0;background:none;border:none;cursor:pointer;color:var(--sub);height:var(--tabh);
+    font-size:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    white-space:nowrap;padding:0 2px}
   .tabs button i{font-size:18px;font-style:normal;line-height:1}
   .tabs button[aria-selected=true]{color:var(--blue);font-weight:600}
+
+  /* カレンダー */
+  .cal-sum{text-align:center;font-size:12px;color:var(--sub);margin-bottom:10px}
+  .cal-sum b{font-variant-numeric:tabular-nums}
+  .cal-sum .o{color:var(--red);font-weight:600}
+  .cal-sum .i{color:var(--blue);font-weight:600}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+  .cal-head span{text-align:center;font-size:11px;color:var(--sub);padding:4px 0}
+  .cal-head .cal-sun{color:var(--red)}
+  .cal-head .cal-sat{color:var(--blue)}
+  .cal-cell{min-height:52px;border-radius:8px;padding:4px 3px 3px;display:flex;flex-direction:column;
+    align-items:center;gap:2px;background:none;border:none;cursor:pointer;font-family:var(--font);color:inherit}
+  .cal-cell.empty{visibility:hidden}
+  .cal-cell:active{background:var(--bg)}
+  .cal-cell.today{background:#EAF3FB}
+  .cal-cell.sel{outline:2px solid var(--blue);outline-offset:-2px}
+  .cal-d{font-size:12px;font-variant-numeric:tabular-nums;line-height:1.2}
+  .cal-cell.sun .cal-d{color:var(--red)}
+  .cal-cell.sat .cal-d{color:var(--blue)}
+  .cal-dot{width:5px;height:5px;border-radius:50%;background:var(--sub);margin-top:1px}
+  .cal-amt{display:flex;flex-direction:column;align-items:center;line-height:1.25;margin-top:auto}
+  .cal-o{font-size:9px;color:var(--red);font-variant-numeric:tabular-nums}
+  .cal-i{font-size:9px;color:var(--blue);font-variant-numeric:tabular-nums}
+  .cal-daytitle{font-size:12px;color:var(--sub);padding:4px 4px 8px}
   .fab{position:fixed;right:calc(50% - 260px + 16px);bottom:calc(var(--tabh) + env(safe-area-inset-bottom) + 16px);
     z-index:6;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;background:var(--blue);
     color:#fff;font-size:28px;line-height:1;box-shadow:0 4px 14px rgba(18,121,212,.4)}
@@ -286,6 +311,17 @@
       </div>
     </section>
 
+    <section id="tab-cal" hidden>
+      <div class="card" style="padding:12px">
+        <div class="cal-sum" id="calSum"></div>
+        <div class="cal-grid cal-head">
+          <span class="cal-sun">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span class="cal-sat">土</span>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+      <div id="calDay"></div>
+    </section>
+
     <section id="tab-book" hidden>
       <div class="seg" id="expInclSeg" style="margin-bottom:12px">
         <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
@@ -382,7 +418,8 @@
 
 <nav class="tabs" role="tablist">
   <button data-tab="home" role="tab" aria-selected="true"><i>☰</i>ホーム</button>
-  <button data-tab="book" role="tab" aria-selected="false"><i>◕</i>家計簿</button>
+  <button data-tab="cal" role="tab" aria-selected="false"><i>▦</i>カレンダー</button>
+  <button data-tab="book" role="tab" aria-selected="false"><i>◕</i>集計</button>
   <button data-tab="expense" role="tab" aria-selected="false"><i>↩</i>経費</button>
   <button data-tab="budget" role="tab" aria-selected="false"><i>◧</i>予算</button>
   <button data-tab="set" role="tab" aria-selected="false"><i>⚙</i>設定</button>
@@ -499,6 +536,7 @@ const cache={};
 let cur=new Date(), type='expense', editId=null, lines=[];
 let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC', csSubs=[];
 const openCats=new Set();
+let calSelDay=null;                  // カレンダーで選択中の日（YYYY-MM-DD）
 let storeIndex=[], nameIndex=[];    // 過去入力の候補（頻度順）
 function buildSuggestIndex(){
   const sc={}, nc={};
@@ -673,6 +711,7 @@ async function render(){
 
   renderManage();renderYears();
   if(!$('tab-expense').hidden)renderExpense();
+  if(!$('tab-cal').hidden)renderCalendar();
 }
 function groupHTML(es){
   const g={};es.forEach(e=>(g[e.date]=g[e.date]||[]).push(e));
@@ -709,9 +748,10 @@ function itemHTML(e){
 
 /* ============ タブ / 月送り ============ */
 function showTab(n){
-  ['home','book','expense','budget','set'].forEach(t=>$('tab-'+t).hidden=t!==n);
+  ['home','cal','book','expense','budget','set'].forEach(t=>$('tab-'+t).hidden=t!==n);
   document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===n));
   if(n==='expense'){expSelected.clear();renderExpense()}
+  if(n==='cal')renderCalendar();
   window.scrollTo(0,0);
 }
 document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('button');if(b)showTab(b.dataset.tab)};
@@ -728,8 +768,8 @@ $('expInclSeg').onclick=async e=>{
   [...$('expInclSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
   await render();
 };
-$('prev').onclick=async()=>{cur=new Date(Y(),cur.getMonth()-1,1);await render()};
-$('next').onclick=async()=>{cur=new Date(Y(),cur.getMonth()+1,1);await render()};
+$('prev').onclick=async()=>{cur=new Date(Y(),cur.getMonth()-1,1);calSelDay=null;await render()};
+$('next').onclick=async()=>{cur=new Date(Y(),cur.getMonth()+1,1);calSelDay=null;await render()};
 
 /* ---- 年月ジャンプ ---- */
 const open=el=>{el.classList.add('open');$('scrim').classList.add('open')};
@@ -754,7 +794,7 @@ async function drawMonths(y){
 $('ySel').onchange=e=>drawMonths(+e.target.value);
 $('mGrid').onclick=async e=>{
   const b=e.target.closest('[data-m]');if(!b)return;
-  cur=new Date(+$('ySel').value,+b.dataset.m,1);
+  cur=new Date(+$('ySel').value,+b.dataset.m,1);calSelDay=null;
   closeAll();await render();
 };
 
@@ -1087,6 +1127,72 @@ $('expActionbar').onclick=async e=>{
     await changeStatus([...expSelected],'claimed');
     toast('申請中に戻しました');return}
 };
+
+/* ============ カレンダー ============ */
+const calShort=n=>{         // マス目用の短縮金額
+  const a=Math.abs(n);
+  if(a>=100000)return (n<0?'-':'')+Math.round(a/10000)+'万';
+  if(a>=10000)return (n<0?'-':'')+(a/10000).toFixed(1).replace(/\.0$/,'')+'万';
+  return (n<0?'-':'')+a.toLocaleString('ja-JP');
+};
+async function renderCalendar(){
+  const y=Y(), mo=cur.getMonth(), d=await year(y);
+  // 日別集計
+  const byDay={};
+  d.entries.filter(e=>e.date.slice(0,7)===mkey(cur)).forEach(e=>{
+    const day=e.date, o=byDay[day]=byDay[day]||{out:0,inc:0};
+    if(e.type==='expense')o.out+=total(e);else o.inc+=total(e);
+  });
+  const mOut=Object.values(byDay).reduce((s,o)=>s+o.out,0);
+  const mInc=Object.values(byDay).reduce((s,o)=>s+o.inc,0);
+  $('calSum').innerHTML=`${y}年${mo+1}月　支出 <b class="o">${yen(mOut)}</b>　収入 <b class="i">${yen(mInc)}</b>`;
+
+  const first=new Date(y,mo,1).getDay();
+  const days=new Date(y,mo+1,0).getDate();
+  const td=today();
+  let cells='';
+  for(let i=0;i<first;i++)cells+='<button class="cal-cell empty" disabled></button>';
+  for(let dd=1;dd<=days;dd++){
+    const date=`${y}-${String(mo+1).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+    const dow=new Date(y,mo,dd).getDay();
+    const o=byDay[date];
+    const cls=['cal-cell'];
+    if(dow===0)cls.push('sun');if(dow===6)cls.push('sat');
+    if(date===td)cls.push('today');
+    if(date===calSelDay)cls.push('sel');
+    cells+=`<button class="${cls.join(' ')}" data-day="${date}">
+      <span class="cal-d">${dd}</span>
+      ${o?'<span class="cal-dot"></span>':''}
+      <span class="cal-amt">
+        ${o&&o.out?`<span class="cal-o">-${calShort(o.out)}</span>`:''}
+        ${o&&o.inc?`<span class="cal-i">+${calShort(o.inc)}</span>`:''}
+      </span>
+    </button>`;
+  }
+  $('calGrid').innerHTML=cells;
+  renderCalDay();
+}
+async function renderCalDay(){
+  const box=$('calDay');
+  if(!calSelDay){box.innerHTML='<p class="cal-daytitle" style="text-align:center">日付をタップすると、その日の記録が出ます</p>';return}
+  const d=await year(+calSelDay.slice(0,4));
+  const es=d.entries.filter(e=>e.date===calSelDay).sort((a,b)=>b.id-a.id);
+  const dt=new Date(calSelDay+'T00:00:00');
+  const W=['日','月','火','水','木','金','土'];
+  const o=es.filter(e=>e.type==='expense').reduce((s,e)=>s+total(e),0);
+  const ic=es.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
+  box.innerHTML=`<div class="dayhead" style="padding:2px 4px 8px">
+      <span>${dt.getMonth()+1}月${dt.getDate()}日(${W[dt.getDay()]})</span>
+      <span class="num">${o?'支出 '+yen(o):''}${o&&ic?'　':''}${ic?'収入 '+yen(ic):''}</span>
+    </div>`+
+    (es.length?`<div class="items">${es.map(itemHTML).join('')}</div>`
+              :'<div class="card"><p class="empty">この日の記録はありません</p></div>');
+}
+$('calGrid').addEventListener('click',e=>{
+  const b=e.target.closest('[data-day]');if(!b)return;
+  calSelDay=(calSelDay===b.dataset.day)?null:b.dataset.day;
+  renderCalendar();
+});
 
 /* ============ カテゴリ管理 ============ */
 $('mgSeg').onclick=e=>{
