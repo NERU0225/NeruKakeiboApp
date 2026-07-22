@@ -114,6 +114,7 @@
   .kind-cash{background:#38B08A}
   .kind-bank{background:#4C8BE8}
   .kind-card{background:#8B6FD4}
+  .kind-emoney{background:#E5943B}
   .mrow .mm-sub{font-size:11px;color:var(--sub);margin-top:2px}
   .bill{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
   .bill-row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
@@ -517,11 +518,7 @@
   <div class="field"><label for="mtName">名前</label><input type="text" id="mtName" placeholder="例：楽天カード" maxlength="16"></div>
   <div id="mtKindWrap">
     <p class="hint" style="margin:14px 0 6px">種別</p>
-    <div class="seg" id="mtKind">
-      <button type="button" data-kind="cash" aria-pressed="true">現金</button>
-      <button type="button" data-kind="bank" aria-pressed="false">口座</button>
-      <button type="button" data-kind="card" aria-pressed="false">カード</button>
-    </div>
+    <div class="seg" id="mtKind"></div>
   </div>
   <div id="mtCardWrap" hidden>
     <div class="field"><label for="mtClosing">締め日</label>
@@ -1284,7 +1281,8 @@ $('setNav').onclick=e=>{
 
 /* ============ 支払い方法・収入経路 ============ */
 let mmType='expense', mtEdit=null, mtKind='cash';
-const KIND={cash:'現金',bank:'口座',card:'カード'};
+const KIND={cash:'現金',bank:'口座',card:'カード',emoney:'電子マネー'};
+const KIND_OPTS={expense:['cash','bank','card'],income:['cash','bank','emoney']};
 $('mmSeg').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;
   mmType=b.dataset.type;
@@ -1318,13 +1316,15 @@ $('addMethod').onclick=()=>openMethodSheet(null);
 
 function openMethodSheet(m){
   mtEdit=m?m.name:null;
-  mtKind=m?m.kind:'cash';
+  const opts=KIND_OPTS[mmType];
+  mtKind=m?m.kind:opts[0];
+  if(!opts.includes(mtKind))mtKind=opts[0];
   $('mtTitle').textContent=m?'編集':'追加';
   $('mtName').value=m?m.name:'';
   $('mtDel').hidden=!m;
-  // 収入経路はカード概念なしなので種別UIを隠す（現金/口座のみ、実質ラベルなし）
-  $('mtKindWrap').style.display=mmType==='expense'?'':'none';
-  [...$('mtKind').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.kind===mtKind));
+  // 種別ボタンを支出/収入に応じて生成
+  $('mtKind').innerHTML=opts.map(k=>`<button type="button" data-kind="${k}" aria-pressed="${k===mtKind}">${KIND[k]}</button>`).join('');
+  $('mtKindWrap').style.display='';
   // 締め日・引落し日セレクト
   const days=n=>Array.from({length:31},(_,i)=>`<option value="${i+1}" ${n===i+1?'selected':''}>${i+1}日</option>`).join('');
   $('mtClosing').innerHTML=days(m&&m.closingDay?m.closingDay:15);
@@ -1345,7 +1345,7 @@ $('mtSave').onclick=async()=>{
   const name=$('mtName').value.trim();
   if(!name){toast('名前を入力してください');return}
   if(methods(mmType).some(m=>m.name===name&&m.name!==mtEdit)){toast('同じ名前があります');return}
-  const kind=mmType==='expense'?mtKind:'bank';   // 収入は種別を問わずbank扱い
+  const kind=mtKind;
   const obj={name,kind};
   if(kind==='card'){obj.closingDay=+$('mtClosing').value;obj.payDay=+$('mtPay').value}
   if(mtEdit){
@@ -1376,16 +1376,17 @@ $('mtDel').onclick=async()=>{
 
 /* ---- カード請求ビュー ---- */
 let billMonth=null;   // {y,m} 表示中の請求月
+function lastDay(y,m){return new Date(y,m+1,0).getDate();}      // その月の末日
+function closePoint(y,m,cd){return new Date(y,m,Math.min(cd,lastDay(y,m)));} // 締め点（末日でクランプ）
 function billPeriod(card,y,m){
   // 「y年m月引き落とし」に対応する締め期間を求める。
-  // 引き落とし月の前月が締め月。締め日翌日〜締め日で1サイクル。
-  const payY=y,payM=m;                      // 引き落とし年月(0-index m)
-  const closeMonth=new Date(payY,payM-1,1); // 締めは前月
+  // 引き落とし月の前月が締め月。締め点は各月の末日を超えないよう補正。
+  const closeMonth=new Date(y,m-1,1);            // 締めは前月
   const cy=closeMonth.getFullYear(), cm=closeMonth.getMonth();
   const cd=card.closingDay;
-  // 締め期間：前々月の締め日翌日 〜 前月の締め日
-  const end=new Date(cy,cm,cd);
-  const start=new Date(cy,cm-1,cd+1);
+  const end=closePoint(cy,cm,cd);               // 当締め月の締め点（例：6/30）
+  const prev=closePoint(cy,cm-1,cd);            // 前締め月の締め点（例：5/31）
+  const start=new Date(prev.getFullYear(),prev.getMonth(),prev.getDate()+1); // その翌日（6/1）
   return {start,end};
 }
 async function renderBills(){

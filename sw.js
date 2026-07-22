@@ -1,5 +1,5 @@
 /* 家計簿：オフラインでも起動できるようにするためのキャッシュ */
-const CACHE = 'kakeibo-v14';
+const CACHE = 'kakeibo-v16';
 const ASSETS = [
   './',
   './index.html',
