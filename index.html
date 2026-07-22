@@ -912,7 +912,7 @@ function syncExpToggle(){
 $('expToggle').onclick=()=>{entryExpense=!entryExpense;syncExpToggle()};
 const today=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 const md=s=>s?(+s.slice(5,7))+'/'+(+s.slice(8,10)):'';
-function openSheet(e){
+function openSheet(e,presetDate){
   editId=e?e.id:null;
   type=e?e.type:'expense';
   [...$('typeSeg').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.type===type));
@@ -920,7 +920,7 @@ function openSheet(e){
   $('fStore').placeholder=type==='expense'?'セブンイレブン':'勤務先など';
   lines=e?e.items.map(i=>({...i,qty:i.qty||1,sub:i.sub||''})):[blank()];
   $('fStore').value=e?(e.store||''):'';
-  $('fDate').value=e?e.date:today();
+  $('fDate').value=e?e.date:(presetDate||today());
   $('fMemo').value=e?(e.memo||''):'';
   $('del').hidden=!e;
   $('saveBtn').textContent=e?'変更を保存':'保存';
@@ -950,7 +950,10 @@ $('storeSuggest').addEventListener('click',e=>{
   const b=e.target.closest('[data-store]');if(!b)return;
   $('fStore').value=b.dataset.store;$('storeSuggest').hidden=true;
 });
-$('fab').onclick=()=>openSheet(null);
+$('fab').onclick=()=>{
+  const preset=(!$('tab-cal').hidden&&calSelDay)?calSelDay:null;
+  openSheet(null,preset);
+};
 $('scrim').onclick=closeAll;
 document.onkeydown=e=>{if(e.key==='Escape')closeAll()};
 document.body.addEventListener('click',async e=>{
