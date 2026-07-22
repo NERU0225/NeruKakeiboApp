@@ -110,6 +110,20 @@
   .mrow .edit{background:var(--bg);border:none;border-radius:7px;color:var(--sub);font-size:12px;padding:6px 11px;cursor:pointer}
   .addcat{width:100%;background:var(--bg);border:1px dashed var(--line);border-radius:9px;color:var(--blue);
     font-size:14px;padding:11px;cursor:pointer;margin-top:12px}
+  .kind-badge{display:inline-block;border-radius:5px;font-size:10px;padding:1px 6px;margin-left:6px;color:#fff}
+  .kind-cash{background:#38B08A}
+  .kind-bank{background:#4C8BE8}
+  .kind-card{background:#8B6FD4}
+  .mrow .mm-sub{font-size:11px;color:var(--sub);margin-top:2px}
+  .bill{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+  .bill-row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+  .bill-row:first-of-type{border-top:none}
+  .bill-name{font-size:14px;font-weight:500}
+  .bill-when{font-size:11px;color:var(--sub);margin-top:2px}
+  .bill-amt{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+  .bill-nav{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:6px}
+  .bill-nav button{background:none;border:none;color:var(--sub);font-size:16px;padding:4px 10px;cursor:pointer}
+  .bill-nav b{font-size:13px;min-width:8em;text-align:center}
 
   /* 経費トグル */
   .exp-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -380,7 +394,12 @@
     </section>
 
     <section id="tab-set" hidden>
-      <div class="card">
+      <div class="seg" id="setNav" style="margin-bottom:12px">
+        <button type="button" data-set="cat" aria-pressed="true">カテゴリ</button>
+        <button type="button" data-set="method" aria-pressed="false">支払い・収入</button>
+      </div>
+
+      <div class="card" id="setCatCard">
         <p class="card-title">カテゴリ</p>
         <div class="seg" id="mgSeg">
           <button type="button" data-type="expense" aria-pressed="true">支出</button>
@@ -388,6 +407,17 @@
         </div>
         <div id="mgList"></div>
         <button class="addcat" id="addCat">＋ カテゴリを追加</button>
+      </div>
+
+      <div class="card" id="setMethodCard" hidden>
+        <p class="card-title">支払い方法・収入経路</p>
+        <div class="seg" id="mmSeg">
+          <button type="button" data-type="expense" aria-pressed="true">支払い方法</button>
+          <button type="button" data-type="income" aria-pressed="false">収入経路</button>
+        </div>
+        <div id="mmList"></div>
+        <button class="addcat" id="addMethod">＋ 追加</button>
+        <div id="billView"></div>
       </div>
 
       <div class="card">
@@ -436,6 +466,7 @@
   <div class="field" style="position:relative"><label for="fStore" id="storeLabel">店名</label><input type="text" id="fStore" placeholder="セブンイレブン" maxlength="30" autocomplete="off"></div>
   <div class="suggest" id="storeSuggest" hidden></div>
   <div class="field"><label for="fDate">日付</label><input type="date" id="fDate"></div>
+  <div class="field"><label for="fMethod" id="methodLabel">支払い</label><select id="fMethod" style="flex:1"></select></div>
   <div class="field"><label for="fMemo">メモ</label><input type="text" id="fMemo" placeholder="任意" maxlength="40"></div>
   <p class="card-title" style="margin:16px 0 0">明細</p>
   <div class="lines" id="lines"></div>
@@ -480,6 +511,31 @@
   </div>
 </div>
 
+<div class="sheet" id="methodSheet" role="dialog" aria-modal="true" aria-label="支払い方法の編集">
+  <div class="grab"></div>
+  <h3 id="mtTitle">追加</h3>
+  <div class="field"><label for="mtName">名前</label><input type="text" id="mtName" placeholder="例：楽天カード" maxlength="16"></div>
+  <div id="mtKindWrap">
+    <p class="hint" style="margin:14px 0 6px">種別</p>
+    <div class="seg" id="mtKind">
+      <button type="button" data-kind="cash" aria-pressed="true">現金</button>
+      <button type="button" data-kind="bank" aria-pressed="false">口座</button>
+      <button type="button" data-kind="card" aria-pressed="false">カード</button>
+    </div>
+  </div>
+  <div id="mtCardWrap" hidden>
+    <div class="field"><label for="mtClosing">締め日</label>
+      <select id="mtClosing" style="flex:1"></select></div>
+    <div class="field"><label for="mtPay">引落し日</label>
+      <select id="mtPay" style="flex:1"></select></div>
+    <p class="hint" style="margin-top:4px">締め日の翌月に引き落とし、として計算します。</p>
+  </div>
+  <div class="actions">
+    <button class="btn btn-ghost" id="mtDel" hidden>削除</button>
+    <button class="btn btn-primary" id="mtSave">保存</button>
+  </div>
+</div>
+
 <div class="sheet" id="ymSheet" role="dialog" aria-modal="true" aria-label="年月をえらぶ">
   <div class="grab"></div>
   <h3>年月をえらぶ</h3>
@@ -506,6 +562,13 @@ const DEFAULTS={
 const ICONS=['🍚','🍜','🍞','🍎','☕','🍻','🚬','🍰','🧴','🧻','🏠','🔑','💡','🚿','📱','💻','🚃','🚗','⛽','💊','🏥','📚','✏️','🎮','🎬','🎵','👕','👟','💄','💇','🎁','✈️','🏨','🐶','🧒','💰','📈','🏦','💳','🧾','🎫','✨','📦','🎂'];
 const COLORS=['#F2725C','#F0A03C','#E5B93C','#5FBF7A','#38B08A','#3EA8C4','#4C8BE8','#1279D4','#6C7BD9','#8B6FD4','#E86B9E','#C4784E','#9AA3AC','#5A6470'];
 const FALLBACK={name:'未分類',icon:'📦',color:'#9AA3AC'};
+const DEFAULT_METHODS={
+  expense:[{name:'現金',kind:'cash'}],
+  income:[{name:'現金',kind:'cash'}]
+};
+const methods=t=>(meta.methods&&meta.methods[t])||[];
+const methodByName=(t,n)=>methods(t).find(m=>m.name===n)||null;
+function seedMethods(){meta.methods={expense:DEFAULT_METHODS.expense.map(m=>({...m})),income:DEFAULT_METHODS.income.map(m=>({...m}))}}
 
 /* ============ Service Worker（オフライン起動） ============ */
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
@@ -895,11 +958,19 @@ $('typeSeg').onclick=e=>{
   [...$('typeSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
   $('storeLabel').textContent=type==='expense'?'店名':'内容';
   $('fStore').placeholder=type==='expense'?'セブンイレブン':'勤務先など';
+  $('methodLabel').textContent=type==='expense'?'支払い':'経路';
   lines.forEach(l=>{if(!cats(type).some(c=>c.name===l.category))l.category=(cats(type)[0]||FALLBACK).name});
+  fillMethodSelect('');
   if(type==='income'){entryExpense=false;syncExpToggle()}
   $('expToggleWrap').style.display=type==='expense'?'':'none';
   drawLines();
 };
+function fillMethodSelect(sel){
+  const ms=methods(type);
+  $('fMethod').innerHTML=ms.length
+    ? ms.map(m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`).join('')
+    : '<option value="">（未登録）</option>';
+}
 function syncExpToggle(){
   $('expToggle').setAttribute('aria-checked',entryExpense?'true':'false');
   // 申請日・精算日欄は、経費オン かつ 既にその段階まで進んだ記録のときだけ出す
@@ -918,9 +989,11 @@ function openSheet(e,presetDate){
   [...$('typeSeg').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.type===type));
   $('storeLabel').textContent=type==='expense'?'店名':'内容';
   $('fStore').placeholder=type==='expense'?'セブンイレブン':'勤務先など';
+  $('methodLabel').textContent=type==='expense'?'支払い':'経路';
   lines=e?e.items.map(i=>({...i,qty:i.qty||1,sub:i.sub||''})):[blank()];
   $('fStore').value=e?(e.store||''):'';
   $('fDate').value=e?e.date:(presetDate||today());
+  fillMethodSelect(e?(e.method||''):(methods(type)[0]?methods(type)[0].name:''));
   $('fMemo').value=e?(e.memo||''):'';
   $('del').hidden=!e;
   $('saveBtn').textContent=e?'変更を保存':'保存';
@@ -972,8 +1045,10 @@ $('saveBtn').onclick=async()=>{
     })
     .filter(i=>i.amount>0);
   if(!items.length){toast('明細の金額を入力してください');return}
+  const method=$('fMethod').value;
+  if(!method){toast(type==='expense'?'支払い方法を選んでください':'収入経路を選んでください');return}
   const expense=(type==='expense')&&entryExpense;
-  const data={date,type,store:$('fStore').value.trim(),memo:$('fMemo').value.trim(),items,expense};
+  const data={date,type,store:$('fStore').value.trim(),memo:$('fMemo').value.trim(),items,expense,method};
   const ny=+date.slice(0,4);
   if(editId){
     const oy=Y(), od=await year(oy);
@@ -1197,6 +1272,157 @@ $('calGrid').addEventListener('click',e=>{
   renderCalendar();
 });
 
+/* ============ 設定：項目切替 ============ */
+$('setNav').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const v=b.dataset.set;
+  [...$('setNav').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  $('setCatCard').hidden=v!=='cat';
+  $('setMethodCard').hidden=v!=='method';
+  if(v==='method')renderMethods();
+};
+
+/* ============ 支払い方法・収入経路 ============ */
+let mmType='expense', mtEdit=null, mtKind='cash';
+const KIND={cash:'現金',bank:'口座',card:'カード'};
+$('mmSeg').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  mmType=b.dataset.type;
+  [...$('mmSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  renderMethods();
+};
+function renderMethods(){
+  const l=methods(mmType);
+  $('mmList').innerHTML=l.map((m,i)=>{
+    const sub=m.kind==='card'&&m.closingDay?`締め ${m.closingDay}日 ・ 引落し 翌月${m.payDay}日`:'';
+    return `<div class="mrow">
+      <div style="flex:1;min-width:0">
+        <span class="cname">${esc(m.name)}<span class="kind-badge kind-${m.kind}">${KIND[m.kind]}</span></span>
+        ${sub?`<div class="mm-sub">${sub}</div>`:''}
+      </div>
+      <button class="move" data-mv="${i}" data-dir="-1" ${i===0?'disabled':''} aria-label="上へ">▲</button>
+      <button class="move" data-mv="${i}" data-dir="1" ${i===l.length-1?'disabled':''} aria-label="下へ">▼</button>
+      <button class="edit" data-ed="${i}">編集</button>
+    </div>`;
+  }).join('')||'<p class="empty">「＋ 追加」から登録してください</p>';
+  renderBills();
+}
+$('mmList').onclick=async e=>{
+  const mv=e.target.closest('[data-mv]');
+  if(mv){const i=+mv.dataset.mv,j=i+ +mv.dataset.dir,a=meta.methods[mmType];
+    [a[i],a[j]]=[a[j],a[i]];await saveMeta();renderMethods();return}
+  const ed=e.target.closest('[data-ed]');
+  if(ed)openMethodSheet(methods(mmType)[+ed.dataset.ed]);
+};
+$('addMethod').onclick=()=>openMethodSheet(null);
+
+function openMethodSheet(m){
+  mtEdit=m?m.name:null;
+  mtKind=m?m.kind:'cash';
+  $('mtTitle').textContent=m?'編集':'追加';
+  $('mtName').value=m?m.name:'';
+  $('mtDel').hidden=!m;
+  // 収入経路はカード概念なしなので種別UIを隠す（現金/口座のみ、実質ラベルなし）
+  $('mtKindWrap').style.display=mmType==='expense'?'':'none';
+  [...$('mtKind').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.kind===mtKind));
+  // 締め日・引落し日セレクト
+  const days=n=>Array.from({length:31},(_,i)=>`<option value="${i+1}" ${n===i+1?'selected':''}>${i+1}日</option>`).join('');
+  $('mtClosing').innerHTML=days(m&&m.closingDay?m.closingDay:15);
+  $('mtPay').innerHTML=days(m&&m.payDay?m.payDay:10);
+  updateMtCard();
+  open($('methodSheet'));
+}
+function updateMtCard(){
+  $('mtCardWrap').hidden=!(mmType==='expense'&&mtKind==='card');
+}
+$('mtKind').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  mtKind=b.dataset.kind;
+  [...$('mtKind').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  updateMtCard();
+};
+$('mtSave').onclick=async()=>{
+  const name=$('mtName').value.trim();
+  if(!name){toast('名前を入力してください');return}
+  if(methods(mmType).some(m=>m.name===name&&m.name!==mtEdit)){toast('同じ名前があります');return}
+  const kind=mmType==='expense'?mtKind:'bank';   // 収入は種別を問わずbank扱い
+  const obj={name,kind};
+  if(kind==='card'){obj.closingDay=+$('mtClosing').value;obj.payDay=+$('mtPay').value}
+  if(mtEdit){
+    // 改名時は記録のmethodも追従
+    if(name!==mtEdit){
+      await eachYear(d=>{let t=false;
+        d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit){e.method=name;t=true}});
+        return t;});
+    }
+    const idx=meta.methods[mmType].findIndex(m=>m.name===mtEdit);
+    meta.methods[mmType][idx]=obj;
+  }else meta.methods[mmType].push(obj);
+  await saveMeta();closeAll();renderMethods();toast(mtEdit?'変更しました':'追加しました');
+};
+$('mtDel').onclick=async()=>{
+  let used=0;
+  for(const y of meta.years){const d=await year(y);
+    d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit)used++})}
+  if(methods(mmType).length<=1){toast('少なくとも1つは必要です');return}
+  if(!confirm(used?`「${mtEdit}」を削除すると、${used}件の記録が「未設定」になります。よろしいですか？`
+                  :`「${mtEdit}」を削除します。よろしいですか？`))return;
+  await eachYear(d=>{let t=false;
+    d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit){e.method='';t=true}});
+    return t;});
+  meta.methods[mmType]=methods(mmType).filter(m=>m.name!==mtEdit);
+  await saveMeta();closeAll();renderMethods();toast('削除しました');
+};
+
+/* ---- カード請求ビュー ---- */
+let billMonth=null;   // {y,m} 表示中の請求月
+function billPeriod(card,y,m){
+  // 「y年m月引き落とし」に対応する締め期間を求める。
+  // 引き落とし月の前月が締め月。締め日翌日〜締め日で1サイクル。
+  const payY=y,payM=m;                      // 引き落とし年月(0-index m)
+  const closeMonth=new Date(payY,payM-1,1); // 締めは前月
+  const cy=closeMonth.getFullYear(), cm=closeMonth.getMonth();
+  const cd=card.closingDay;
+  // 締め期間：前々月の締め日翌日 〜 前月の締め日
+  const end=new Date(cy,cm,cd);
+  const start=new Date(cy,cm-1,cd+1);
+  return {start,end};
+}
+async function renderBills(){
+  const cards=methods('expense').filter(m=>m.kind==='card');
+  const box=$('billView');
+  if(mmType!=='expense'||!cards.length){box.innerHTML='';return}
+  const now=new Date();
+  if(!billMonth)billMonth={y:now.getFullYear(),m:now.getMonth()};
+  // 全記録を集める
+  const all=[];
+  for(const y of meta.years){const d=await year(y);
+    d.entries.forEach(e=>{if(e.type==='expense'&&e.method)all.push(e)})}
+  const rows=cards.map(card=>{
+    const {start,end}=billPeriod(card,billMonth.y,billMonth.m);
+    const sum=all.filter(e=>{
+      if(e.method!==card.name)return false;
+      const dt=new Date(e.date+'T00:00:00');
+      return dt>=start&&dt<=end;
+    }).reduce((s,e)=>s+total(e),0);
+    const pm=(billMonth.m+1);
+    return {name:card.name,sum,payDay:card.payDay,
+      period:`${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()}締め`};
+  });
+  box.innerHTML=`<div class="bill">
+    <p class="card-title">カード請求</p>
+    <div class="bill-nav">
+      <button id="billPrev">‹</button><b>${billMonth.y}年${billMonth.m+1}月 引き落とし</b><button id="billNext">›</button>
+    </div>
+    ${rows.map(r=>`<div class="bill-row">
+      <div><div class="bill-name">${esc(r.name)}</div><div class="bill-when">${r.period} ・ ${billMonth.m+1}月${r.payDay}日引落し</div></div>
+      <div class="bill-amt">${yen(r.sum)}</div>
+    </div>`).join('')}
+  </div>`;
+  $('billPrev').onclick=()=>{billMonth.m--;if(billMonth.m<0){billMonth.m=11;billMonth.y--}renderBills()};
+  $('billNext').onclick=()=>{billMonth.m++;if(billMonth.m>11){billMonth.m=0;billMonth.y++}renderBills()};
+}
+
 /* ============ カテゴリ管理 ============ */
 $('mgSeg').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;
@@ -1326,7 +1552,7 @@ async function exportFile(name,obj){
 const pack=async ys=>{
   const data={};
   for(const y of ys)data[y]=await year(y);
-  return {app:'kakeibo',version:2,exportedAt:new Date().toISOString(),cats:meta.cats,years:ys,data};
+  return {app:'kakeibo',version:3,exportedAt:new Date().toISOString(),cats:meta.cats,methods:meta.methods,years:ys,data};
 };
 $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
@@ -1346,6 +1572,7 @@ $('impFile').onchange=async e=>{
     const ys=Object.keys(j.data);
     if(!confirm(`${ys.join('・')}年のデータを読み込みます。同じ年の今のデータは上書きされます。よろしいですか？`))return;
     if(j.cats){meta.cats=j.cats;await saveMeta()}
+    if(j.methods){meta.methods=j.methods;await saveMeta()}
     for(const y of ys){cache[+y]=j.data[y];await saveYear(+y)}
     await render();toast('読み込みました');
   }catch(err){toast('このファイルは読み込めません')}
@@ -1354,7 +1581,7 @@ $('wipe').onclick=async()=>{
   if(!confirm('すべての記録・予算・カテゴリ設定を消します。元に戻せません。よろしいですか？'))return;
   for(const y of meta.years)await store.set(YK(y),{entries:[],budgets:{},catBudgets:{}});
   Object.keys(cache).forEach(k=>delete cache[k]);
-  meta={cats:null,years:[]};seedCats();await saveMeta();
+  meta={cats:null,years:[]};seedCats();seedMethods();await saveMeta();
   await render();toast('すべて消しました');
 };
 
@@ -1372,6 +1599,7 @@ $('wipe').onclick=async()=>{
     for(const t of ['expense','income'])(meta.cats[t]||[]).forEach(c=>{if(!c.subs){c.subs=[];patched=true}});
     if(patched)await saveMeta();
   }
+  if(!meta.methods){seedMethods();await saveMeta()}
   await year(Y());
   await render();
 })();
