@@ -614,7 +614,18 @@ const defaultRate=()=>meta.defaultRate!==undefined?meta.defaultRate:10;
 
 /* ============ Service Worker（オフライン起動） ============ */
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
-  addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js').then(reg=>{
+      // 新しい版が用意できたら知らせる（反映は次に開いた時）
+      reg.addEventListener('updatefound',()=>{
+        const nw=reg.installing;if(!nw)return;
+        nw.addEventListener('statechange',()=>{
+          if(nw.state==='installed'&&navigator.serviceWorker.controller)
+            setTimeout(()=>{try{toast('新しい版があります。次に開くと切り替わります')}catch(e){}},1200);
+        });
+      });
+    }).catch(()=>{});
+  });
 }
 
 /* ============ 保存 ============ */
@@ -1741,7 +1752,7 @@ const pack=async ys=>{
 };
 $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
-  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました');
+  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました',[y]);
 };
 
 /* ---- バックアップの記録と案内 ---- */
@@ -1752,9 +1763,29 @@ async function countAllEntries(){
   for(const y of meta.years){const d=await year(y);n+=(d.entries||[]).length}
   return n;
 }
-async function afterBackup(msg){
+/* 年ごとの記録件数（前回バックアップ時との差分判定に使う） */
+async function countByYear(){
+  const o={};
+  for(const y of meta.years){const d=await year(y);o[y]=(d.entries||[]).length}
+  return o;
+}
+/* 前回バックアップ以降に増減があった年（＝書き出しが必要な年） */
+async function yearsNeedBackup(){
+  const now=await countByYear(), prev=meta.lastBackupCounts||{};
+  const ys=Object.keys(now).filter(y=>(now[y]||0)!==(prev[y]||0)).map(Number);
+  if(!ys.length){                       // 差分がなければ今年を対象に
+    const ty=new Date().getFullYear();
+    return meta.years.includes(ty)?[ty]:[...meta.years].slice(-1);
+  }
+  return ys.sort();
+}
+async function afterBackup(msg,doneYears){
   meta.lastBackupAt=new Date().toISOString();
   meta.lastBackupCount=await countAllEntries();
+  const counts=await countByYear();
+  meta.lastBackupCounts=meta.lastBackupCounts||{};
+  // 書き出した年だけ、その時点の件数を記録する
+  (doneYears||Object.keys(counts).map(Number)).forEach(y=>{meta.lastBackupCounts[y]=counts[y]||0});
   await saveMeta();
   await updateBackupBar();
   toast(msg);
@@ -1765,7 +1796,9 @@ async function updateBackupBar(){
   const total=await countAllEntries();
   if(!total){bar.hidden=true;return}               // 記録がなければ出さない
   const last=meta.lastBackupAt?new Date(meta.lastBackupAt):null;
-  const unsaved=total-(meta.lastBackupCount||0);
+  // 年ごとの差分を足して未保存件数を出す（年をまたいでも取りこぼさない）
+  const now=await countByYear(), prev=meta.lastBackupCounts||{};
+  const unsaved=Object.keys(now).reduce((s,y)=>s+Math.max(0,(now[y]||0)-(prev[y]||0)),0);
   let show=false, text='';
   if(!last){
     if(total>=5){show=true;text=`まだバックアップしていません。${total}件の記録が未保存です。`}
@@ -1783,8 +1816,14 @@ async function updateBackupBar(){
 }
 $('backupLater').onclick=()=>{dismissedThisSession=true;$('backupBar').hidden=true};
 $('backupGo').onclick=async()=>{
-  const y=new Date().getFullYear();
-  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました');
+  const ys=await yearsNeedBackup();
+  const done=[];
+  for(const y of ys){
+    // 年をまたぐ場合も、記録が残っている年をすべて書き出す
+    if(await exportFile(`kakeibo-${y}.json`,await pack([y])))done.push(y);
+    else break;                      // 途中でキャンセルされたら中断
+  }
+  if(done.length)await afterBackup(done.join('年・')+'年を書き出しました',done);
 };
 $('impBtn').onclick=()=>$('impFile').click();
 $('impFile').onchange=async e=>{

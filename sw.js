@@ -1,5 +1,12 @@
-/* 家計簿：オフラインでも起動できるようにするためのキャッシュ */
-const CACHE = 'kakeibo-v22';
+/* 家計簿：オフラインでも、電波が弱くても即座に開くためのキャッシュ
+
+   方針（キャッシュ優先 / stale-while-revalidate）
+   - キャッシュがあれば通信を待たずに即返す（電波が弱くても起動が遅くならない）
+   - 同時に裏で更新を取りに行き、取れたら次回起動時に反映される
+   - 裏の更新は3秒で打ち切る（弱電波でつかみ続けないため）
+*/
+const CACHE = 'kakeibo-v23';
+const REVALIDATE_TIMEOUT = 3000;   // 裏で更新を待つ上限(ms)
 const ASSETS = [
   './',
   './index.html',
@@ -26,18 +33,37 @@ self.addEventListener('activate', e => {
   );
 });
 
-/* 通信できる時は最新を取りに行き、取れなければキャッシュを返す。
-   これで更新をアップロードすれば次回オンライン起動時に反映される。 */
+/* 指定時間で打ち切る fetch */
+function fetchWithTimeout(req, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    fetch(req).then(res => { clearTimeout(timer); resolve(res); },
+                    err => { clearTimeout(timer); reject(err); });
+  });
+}
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || !req.url.startsWith('http')) return;
+
   e.respondWith(
-    fetch(req)
-      .then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
-        return res;
-      })
-      .catch(() => caches.match(req).then(m => m || caches.match('./index.html')))
+    caches.match(req).then(cached => {
+      // 裏で更新を取りに行く（結果は次回に使う）
+      const revalidate = fetchWithTimeout(req, REVALIDATE_TIMEOUT)
+        .then(res => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => null);
+
+      // キャッシュがあれば通信を待たずに即返す
+      if (cached) return cached;
+
+      // 初回など、キャッシュが無い時だけ通信の結果を待つ
+      return revalidate.then(res => res || caches.match('./index.html'));
+    })
   );
 });
