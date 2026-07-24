@@ -19,6 +19,7 @@
     --font:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none !important}
   html,body{margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.6;
     -webkit-text-size-adjust:100%;overscroll-behavior-y:none}
@@ -468,11 +469,10 @@
           <button class="btn btn-sub" id="expOne" style="flex:0 0 auto;padding:8px 14px;font-size:13px">書き出す</button>
         </div>
         <div class="actions" style="margin-top:6px">
-          <button class="btn btn-sub" id="expAll">全部まとめて</button>
           <button class="btn btn-sub" id="impBtn">読み込む</button>
         </div>
-        <input type="file" id="impFile" accept=".json,application/json,text/plain" hidden>
-        <p class="hint" style="margin-top:12px">書き出すと共有シートが開くので「ファイルに保存」でiCloud等へ。読み込むと、ファイルに入っている年のデータが今のデータを上書きします。</p>
+        <input type="file" id="impFile" accept=".json,application/json,text/plain" multiple hidden>
+        <p class="hint" style="margin-top:12px">1年ぶんずつ <b>kakeibo-年.json</b> という名前で書き出します。同じ名前で保存すると、iOSが上書きするか聞いてくるので「置き換える」を選んでください。保存先は前回の場所が記憶されます。</p>
       </div>
 
       <div class="card">
@@ -1743,10 +1743,6 @@ $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
   if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました');
 };
-$('expAll').onclick=async()=>{
-  const ys=[...new Set([...meta.years,Y()])].sort();
-  if(await exportFile(`kakeibo-${ys[0]}-${ys[ys.length-1]}.json`,await pack(ys)))await afterBackup('全期間を書き出しました');
-};
 
 /* ---- バックアップの記録と案内 ---- */
 const BACKUP_INTERVAL_DAYS=14;
@@ -1787,23 +1783,32 @@ async function updateBackupBar(){
 }
 $('backupLater').onclick=()=>{dismissedThisSession=true;$('backupBar').hidden=true};
 $('backupGo').onclick=async()=>{
-  const ys=[...new Set([...meta.years,Y()])].sort();
-  if(await exportFile(`kakeibo-${ys[0]}-${ys[ys.length-1]}.json`,await pack(ys)))await afterBackup('書き出しました');
+  const y=new Date().getFullYear();
+  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました');
 };
 $('impBtn').onclick=()=>$('impFile').click();
 $('impFile').onchange=async e=>{
-  const f=e.target.files[0];if(!f)return;
+  const files=[...e.target.files];if(!files.length)return;
   e.target.value='';
   try{
-    const j=JSON.parse(await f.text());
-    if(j.app!=='kakeibo'||!j.data)throw 0;
-    const ys=Object.keys(j.data);
-    if(!confirm(`${ys.join('・')}年のデータを読み込みます。同じ年の今のデータは上書きされます。よろしいですか？`))return;
-    if(j.cats){meta.cats=j.cats;await saveMeta()}
-    if(j.methods){meta.methods=j.methods;await saveMeta()}
-    if(j.rates){meta.rates=j.rates;if(j.defaultRate)meta.defaultRate=j.defaultRate;await saveMeta()}
-    for(const y of ys){cache[+y]=j.data[y];await saveYear(+y)}
-    await render();toast('読み込みました');
+    const parsed=[];
+    for(const f of files){
+      const j=JSON.parse(await f.text());
+      if(j.app!=='kakeibo'||!j.data)throw 0;
+      parsed.push(j);
+    }
+    const allYears=[...new Set(parsed.flatMap(j=>Object.keys(j.data)))].sort();
+    if(!confirm(`${allYears.join('・')}年のデータを読み込みます。同じ年の今のデータは上書きされます。よろしいですか？`))return;
+    // 設定は最も新しい書き出しのものを採用
+    parsed.sort((a,b)=>String(a.exportedAt||'')<String(b.exportedAt||'')?-1:1);
+    const newest=parsed[parsed.length-1];
+    if(newest.cats)meta.cats=newest.cats;
+    if(newest.methods)meta.methods=newest.methods;
+    if(newest.rates){meta.rates=newest.rates;if(newest.defaultRate)meta.defaultRate=newest.defaultRate}
+    await saveMeta();
+    for(const j of parsed)
+      for(const y of Object.keys(j.data)){cache[+y]=j.data[y];await saveYear(+y)}
+    await render();toast(`${allYears.length}年ぶんを読み込みました`);
   }catch(err){toast('このファイルは読み込めません')}
 };
 $('wipe').onclick=async()=>{
