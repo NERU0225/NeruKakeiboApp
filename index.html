@@ -178,7 +178,9 @@
   .tabs button{flex:1;min-width:0;background:none;border:none;cursor:pointer;color:var(--sub);height:var(--tabh);
     font-size:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
     white-space:nowrap;padding:0 2px}
-  .tabs button i{font-size:18px;font-style:normal;line-height:1}
+  .tabs button i{font-size:18px;font-style:normal;line-height:1;
+    font-family:"Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
+    font-variant-emoji:text}
   .tabs button[aria-selected=true]{color:var(--blue);font-weight:600}
 
   /* カレンダー */
@@ -489,9 +491,9 @@
   <button data-tab="home" role="tab" aria-selected="true"><i>☰</i>ホーム</button>
   <button data-tab="cal" role="tab" aria-selected="false"><i>▦</i>カレンダー</button>
   <button data-tab="book" role="tab" aria-selected="false"><i>◕</i>集計</button>
-  <button data-tab="expense" role="tab" aria-selected="false"><i>↩</i>経費</button>
+  <button data-tab="expense" role="tab" aria-selected="false"><i>⇄</i>経費</button>
   <button data-tab="budget" role="tab" aria-selected="false"><i>◧</i>予算</button>
-  <button data-tab="set" role="tab" aria-selected="false"><i>⚙</i>設定</button>
+  <button data-tab="set" role="tab" aria-selected="false"><i>◎</i>設定</button>
 </nav>
 
 <div class="scrim" id="scrim"></div>

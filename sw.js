@@ -5,7 +5,7 @@
    - 同時に裏で更新を取りに行き、取れたら次回起動時に反映される
    - 裏の更新は3秒で打ち切る（弱電波でつかみ続けないため）
 */
-const CACHE = 'kakeibo-v23';
+const CACHE = 'kakeibo-v24';
 const REVALIDATE_TIMEOUT = 3000;   // 裏で更新を待つ上限(ms)
 const ASSETS = [
   './',
