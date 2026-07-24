@@ -43,6 +43,12 @@
   .link{background:none;border:none;color:var(--blue);font-size:13px;padding:0;cursor:pointer}
   .hint{font-size:11px;color:var(--sub);margin:0;line-height:1.55}
   .warn-banner{background:#FDECEA;color:#A32A1B;font-size:12px;padding:10px 14px;text-align:center}
+  .backup-bar{display:flex;align-items:center;gap:8px;background:#FFF6E5;border-bottom:1px solid #F2E2C4;
+    padding:9px 12px}
+  .bb-text{flex:1;min-width:0;font-size:12px;color:#7A5B12;line-height:1.4}
+  .bb-go{flex:none;background:#E9A23B;color:#fff;border:none;border-radius:7px;
+    font-size:12px;font-weight:600;padding:7px 12px;cursor:pointer;font-family:var(--font)}
+  .bb-later{flex:none;background:none;border:none;color:#B08A45;font-size:14px;padding:4px 6px;cursor:pointer}
 
   .sum{display:flex;text-align:center}
   .sum>div{flex:1}
@@ -227,6 +233,9 @@
   .suggest button:first-child{border-top:none}
   .suggest button:active{background:var(--bg)}
   .suggest .sg-sub{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums}
+  .suggest .sg-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;text-align:left}
+  .suggest .sg-cat{font-size:11px;color:var(--sub)}
+  .suggest .sg-cat.hit{color:var(--blue)}
   .suggest mark{background:#FFF1B8;color:inherit;border-radius:2px}
   .nm-suggest{margin:2px 0 8px}
 
@@ -304,6 +313,11 @@
 <body>
 <div class="app">
   <div class="warn-banner" id="warnBanner" hidden></div>
+  <div class="backup-bar" id="backupBar" hidden>
+    <div class="bb-text" id="backupText"></div>
+    <button class="bb-go" id="backupGo">書き出す</button>
+    <button class="bb-later" id="backupLater" aria-label="あとで">✕</button>
+  </div>
   <header>
     <button id="prev" aria-label="前の月">‹</button>
     <button id="monthLabel" class="num">—</button>
@@ -446,7 +460,8 @@
 
       <div class="card">
         <p class="card-title">バックアップ</p>
-        <p class="hint" id="whereHint" style="margin-bottom:14px"></p>
+        <p class="hint" id="whereHint" style="margin-bottom:8px"></p>
+        <p class="hint" id="lastBackupHint" style="margin-bottom:14px"></p>
         <div class="field" style="border:none;padding-top:0">
           <label for="yearSel">年</label>
           <select class="yearsel" id="yearSel" style="flex:1"></select>
@@ -627,17 +642,31 @@ let cur=new Date(), type='expense', editId=null, lines=[];
 let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC', csSubs=[];
 const openCats=new Set();
 let calSelDay=null;                  // カレンダーで選択中の日（YYYY-MM-DD）
-let storeIndex=[], nameIndex=[];    // 過去入力の候補（頻度順）
+let storeIndex=[], nameIndex=[];    // 過去入力の候補
+/* nameIndex の要素：{name, count, amount, qty, category, sub, taxIn, rate, store}
+   amount等は「最も新しい記録」の値（直近の金額を使うため） */
 function buildSuggestIndex(){
   const sc={}, nc={};
+  const rows=[];
   for(const y of Object.keys(cache)){
-    (cache[y].entries||[]).forEach(e=>{
-      if(e.store)sc[e.store]=(sc[e.store]||0)+1;
-      (e.items||[]).forEach(i=>{if(i.name)nc[i.name]=(nc[i.name]||0)+1});
-    });
+    (cache[y].entries||[]).forEach(e=>rows.push(e));
   }
-  const sort=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([v])=>v);
-  storeIndex=sort(sc);nameIndex=sort(nc);
+  rows.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.id-b.id); // 古い→新しい
+  rows.forEach(e=>{
+    if(e.store)sc[e.store]=(sc[e.store]||0)+1;
+    (e.items||[]).forEach(i=>{
+      if(!i.name)return;
+      const cur=nc[i.name]||{name:i.name,count:0};
+      cur.count++;
+      // 後の記録ほど新しいので上書き＝直近の値が残る
+      cur.amount=i.amount;cur.qty=i.qty||1;cur.category=i.category;cur.sub=i.sub||'';
+      cur.taxIn=i.taxIn!==false;cur.rate=i.rate||defaultRate();cur.store=e.store||'';
+      cur.type=e.type;
+      nc[i.name]=cur;
+    });
+  });
+  storeIndex=Object.entries(sc).sort((a,b)=>b[1]-a[1]).map(([v])=>v);
+  nameIndex=Object.values(nc).sort((a,b)=>b.count-a.count);
 }
 const norm=s=>String(s||'').toLowerCase();
 function matchSuggest(pool,q,exclude){
@@ -649,6 +678,18 @@ function matchSuggest(pool,q,exclude){
     if(n.startsWith(qq))starts.push(v);
     else if(n.includes(qq))incl.push(v);});
   return [...starts,...incl].slice(0,8);
+}
+/* 品名候補：現在のカテゴリに一致するものを上、それ以外を下に */
+function matchNameSuggest(q,cat){
+  const qq=norm(q);
+  const pool=nameIndex.filter(o=>o.type===type);
+  const hit=o=>{const n=norm(o.name);
+    if(!qq)return true;
+    return n.startsWith(qq)?1:(n.includes(qq)?2:0);};
+  const scored=pool.map(o=>({o,r:hit(o)})).filter(x=>x.r);
+  const rank=x=>(x.o.category===cat?0:10)+(qq?(x.r===1?0:1):0);
+  scored.sort((a,b)=>rank(a)-rank(b)||b.o.count-a.o.count);
+  return scored.map(x=>x.o).slice(0,8);
 }
 function hilite(v,q){
   const qq=norm(q);if(!qq)return esc(v);
@@ -975,9 +1016,18 @@ function showNameSuggest(i){
   const inp=$('lines').querySelector(`.nm[data-i="${i}"]`);
   const box=$('lines').querySelector(`.nm-suggest[data-sgi="${i}"]`);
   if(!inp||!box)return;
-  const q=inp.value, list=matchSuggest(nameIndex,q,'');
+  const q=inp.value;
+  const list=matchNameSuggest(q,lines[i].category);
   if(!list.length){box.hidden=true;return}
-  box.innerHTML=list.map(v=>`<button type="button" data-nm="${esc(v)}" data-row="${i}">${hilite(v,q)}</button>`).join('');
+  box.innerHTML=list.map(o=>{
+    const catLabel=o.category+(o.sub?' › '+o.sub:'');
+    const match=o.category===lines[i].category;
+    return `<button type="button" data-nm="${esc(o.name)}" data-row="${i}">
+      <span class="sg-main">${hilite(o.name,q)}
+        <span class="sg-cat${match?' hit':''}">${esc(catLabel)}</span></span>
+      <span class="sg-sub">${yen(o.amount||0)}${o.taxIn===false?' 税抜':''}</span>
+    </button>`;
+  }).join('');
   box.hidden=false;
 }
 function hideNameSuggest(i){
@@ -1018,10 +1068,19 @@ $('lines').addEventListener('click',e=>{
     drawLines();return}
   const sg=e.target.closest('[data-nm]');
   if(sg){const i=+sg.dataset.row;
-    lines[i].name=sg.dataset.nm;
-    const inp=$('lines').querySelector(`.nm[data-i="${i}"]`);
-    if(inp)inp.value=sg.dataset.nm;
-    hideNameSuggest(i);return}
+    const o=nameIndex.find(x=>x.name===sg.dataset.nm&&x.type===type);
+    const l=lines[i];
+    l.name=sg.dataset.nm;
+    if(o){
+      l.amount=o.amount;                                   // 直近の金額で上書き
+      if(cats(type).some(c=>c.name===o.category)){         // カテゴリが今も存在するなら
+        l.category=o.category;
+        l.sub=(o.sub&&subsOf(type,o.category).includes(o.sub))?o.sub:'';
+      }
+      l.taxIn=o.taxIn;l.rate=o.rate;
+    }
+    hideNameSuggest(i);
+    drawLines();return}
   const b=e.target.closest('[data-rm]');if(!b)return;
   lines.splice(+b.dataset.rm,1);
   if(!lines.length)lines=[blank()];
@@ -1656,7 +1715,13 @@ function renderYears(){
   sel.value=keep&&ys.includes(+keep)?keep:Y();
   $('whereHint').textContent=useChat
     ? '保存先：このチャット環境。ダウンロードして端末で開くと、ブラウザ内（localStorage）に切り替わります。'
-    : '保存先：このブラウザ（localStorage）。年ごとに分けて保存しています。履歴やサイトデータを消すと家計簿も消えるので、月に一度は書き出しておくと安心です。';
+    : '保存先：このブラウザ（localStorage）。年ごとに分けて保存しています。履歴やサイトデータを消すと家計簿も消えるので、ときどき書き出しておくと安心です。';
+  const lb=$('lastBackupHint');
+  if(meta.lastBackupAt){
+    const d=new Date(meta.lastBackupAt);
+    const days=Math.floor((Date.now()-d.getTime())/86400000);
+    lb.textContent=`最後のバックアップ：${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}（${days===0?'今日':days+'日前'}）`;
+  }else lb.textContent='最後のバックアップ：まだありません';
 }
 async function exportFile(name,obj){
   const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
@@ -1676,11 +1741,54 @@ const pack=async ys=>{
 };
 $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
-  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))toast(y+'年を書き出しました');
+  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました');
 };
 $('expAll').onclick=async()=>{
   const ys=[...new Set([...meta.years,Y()])].sort();
-  if(await exportFile(`kakeibo-${ys[0]}-${ys[ys.length-1]}.json`,await pack(ys)))toast('全期間を書き出しました');
+  if(await exportFile(`kakeibo-${ys[0]}-${ys[ys.length-1]}.json`,await pack(ys)))await afterBackup('全期間を書き出しました');
+};
+
+/* ---- バックアップの記録と案内 ---- */
+const BACKUP_INTERVAL_DAYS=14;
+let dismissedThisSession=false;
+async function countAllEntries(){
+  let n=0;
+  for(const y of meta.years){const d=await year(y);n+=(d.entries||[]).length}
+  return n;
+}
+async function afterBackup(msg){
+  meta.lastBackupAt=new Date().toISOString();
+  meta.lastBackupCount=await countAllEntries();
+  await saveMeta();
+  await updateBackupBar();
+  toast(msg);
+}
+async function updateBackupBar(){
+  const bar=$('backupBar');
+  if(dismissedThisSession){bar.hidden=true;return}
+  const total=await countAllEntries();
+  if(!total){bar.hidden=true;return}               // 記録がなければ出さない
+  const last=meta.lastBackupAt?new Date(meta.lastBackupAt):null;
+  const unsaved=total-(meta.lastBackupCount||0);
+  let show=false, text='';
+  if(!last){
+    if(total>=5){show=true;text=`まだバックアップしていません。${total}件の記録が未保存です。`}
+  }else{
+    const days=Math.floor((Date.now()-last.getTime())/86400000);
+    if(days>=BACKUP_INTERVAL_DAYS){
+      show=true;
+      text=unsaved>0
+        ? `前回のバックアップから${days}日。${unsaved}件の記録が未保存です。`
+        : `前回のバックアップから${days}日経ちました。`;
+    }
+  }
+  $('backupText').textContent=text;
+  bar.hidden=!show;
+}
+$('backupLater').onclick=()=>{dismissedThisSession=true;$('backupBar').hidden=true};
+$('backupGo').onclick=async()=>{
+  const ys=[...new Set([...meta.years,Y()])].sort();
+  if(await exportFile(`kakeibo-${ys[0]}-${ys[ys.length-1]}.json`,await pack(ys)))await afterBackup('書き出しました');
 };
 $('impBtn').onclick=()=>$('impFile').click();
 $('impFile').onchange=async e=>{
@@ -1724,6 +1832,7 @@ $('wipe').onclick=async()=>{
   if(!meta.rates){meta.rates=[...DEFAULT_RATES];meta.defaultRate=10;await saveMeta()}
   await year(Y());
   await render();
+  await updateBackupBar();
 })();
 </script>
 </body>
