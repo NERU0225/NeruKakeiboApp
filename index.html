@@ -720,7 +720,7 @@ const isExp=e=>e.expense&&e.type==='expense';
 const isOutstanding=e=>isExp(e)&&e.status!=='settled';  // 未精算
 
 const $=i=>document.getElementById(i);
-const yen=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
+const yen=n=>'¥'+Math.round(Number(n)||0).toLocaleString('ja-JP');
 const mkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let toastTimer=null;
@@ -748,6 +748,10 @@ function taxBreakdown(items){
     const g=groups[r];
     const t=Math.floor(g.sum*(+r)/100);   // グループ合計に課税・切り捨て
     taxTotal+=t;exSum+=g.sum;
+    if(g.sum===0){                        // 相殺で0：按分できないので最後の行に寄せる
+      perItemTax[g.idxs[g.idxs.length-1]]=t;
+      continue;
+    }
     let assigned=0;
     g.idxs.forEach((idx,k)=>{
       if(k===g.idxs.length-1)perItemTax[idx]=t-assigned;   // 端数は最後に寄せる
@@ -995,7 +999,7 @@ function drawLines(){
       </div>
       <div class="suggest nm-suggest" data-sgi="${i}" hidden></div>
       <div class="line-b">
-        <span class="qty-wrap">¥<input class="am" data-i="${i}" data-f="amount" type="number" inputmode="numeric" min="0" value="${l.amount}" placeholder="0"></span>
+        <span class="qty-wrap">¥<input class="am" data-i="${i}" data-f="amount" type="number" inputmode="numeric" value="${l.amount}" placeholder="0"></span>
         <span class="qty-wrap">×<input class="qty" data-i="${i}" data-f="qty" type="number" inputmode="numeric" min="1" value="${l.qty||1}">個</span>
         <span class="sub" data-subtotal="${i}">${yen(lineSub(l))}</span>
       </div>
@@ -1197,7 +1201,7 @@ $('saveBtn').onclick=async()=>{
       if(!taxIn)o.rate=+l.rate||defaultRate();
       return o;
     })
-    .filter(i=>i.amount>0);
+    .filter(i=>i.amount!==0);
   if(!items.length){toast('明細の金額を入力してください');return}
   const method=$('fMethod').value;
   if(!method){toast(type==='expense'?'支払い方法を選んでください':'収入経路を選んでください');return}
