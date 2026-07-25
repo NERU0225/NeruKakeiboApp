@@ -32,6 +32,8 @@
   header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);
     display:flex;align-items:center;justify-content:center;gap:6px;
     padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+  .ver{position:absolute;left:14px;bottom:8px;font-size:10px;color:var(--sub);
+    font-variant-numeric:tabular-nums;letter-spacing:.02em}
   header button{background:none;border:none;color:var(--sub);font-size:18px;padding:6px 12px;cursor:pointer;border-radius:8px}
   #monthLabel{font-size:16px;font-weight:600;color:var(--text);min-width:8.5em;text-align:center}
   #monthLabel::after{content:' ▾';color:var(--sub);font-size:11px}
@@ -68,8 +70,8 @@
   .bar i.over{background:var(--red)}
   .b-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-top:7px}
 
-  .donut-wrap{position:relative;width:190px;margin:4px auto 18px}
-  .donut{display:block;width:100%;transform:rotate(-90deg)}
+  .donut-wrap{position:relative;width:230px;margin:4px auto 18px}
+  .donut{display:block;width:100%}
   .donut-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
   .donut-c span{font-size:11px;color:var(--sub)}
   .donut-c b{font-size:22px;font-weight:700}
@@ -322,6 +324,7 @@
     <button class="bb-later" id="backupLater" aria-label="あとで">✕</button>
   </div>
   <header>
+    <span class="ver" id="verLabel"></span>
     <button id="prev" aria-label="前の月">‹</button>
     <button id="monthLabel" class="num">—</button>
     <button id="next" aria-label="次の月">›</button>
@@ -374,7 +377,7 @@
       <div class="card">
         <p class="card-title">支出の内訳</p>
         <div class="donut-wrap">
-          <svg class="donut" viewBox="0 0 42 42" id="donut" role="img" aria-label="カテゴリ別支出の割合"></svg>
+          <svg class="donut" viewBox="-6 -6 54 54" id="donut" role="img" aria-label="カテゴリ別支出の割合"></svg>
           <div class="donut-c num"><span>支出合計</span><b id="dTotal">¥0</b></div>
         </div>
         <div id="catList"></div>
@@ -591,6 +594,7 @@
 
 <script>
 /* ============ 定数 ============ */
+const APP_VERSION='v26';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -799,6 +803,36 @@ async function migrate(){
 }
 
 /* ============ 描画 ============ */
+function drawDonut(rows){
+  const svg=$('donut');
+  const cx=21,cy=21,R=15.9155,W=5.2;
+  const bg=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#EDEFF2" stroke-width="${W}"/>`;
+  const pos=rows.filter(([,v])=>v>0);                 // 値引き等マイナスは弧に含めない
+  const posTotal=pos.reduce((s,[,v])=>s+v,0);
+  if(!posTotal){svg.innerHTML=bg;return}
+  const ang=frac=>frac*2*Math.PI - Math.PI/2;         // 12時起点・時計回り
+  const pt=(a,r)=>[cx+Math.cos(a)*r, cy+Math.sin(a)*r];
+  const gap=pos.length>1?0.006:0;                     // セグメント間の隙間（割合）
+  let acc=0, arcs='', labels='';
+  pos.forEach(([c,v])=>{
+    const frac=v/posTotal;
+    const a0=ang(acc+gap/2), a1=ang(acc+frac-gap/2);
+    const large=(frac-gap)>0.5?1:0;
+    const [x0,y0]=pt(a0,R), [x1,y1]=pt(a1,R);
+    const col=cmeta('expense',c).color;
+    arcs+=`<path d="M ${x0.toFixed(3)} ${y0.toFixed(3)} A ${R} ${R} 0 ${large} 1 ${x1.toFixed(3)} ${y1.toFixed(3)}" fill="none" stroke="${col}" stroke-width="${W}"/>`;
+    if(frac>=0.05){                                    // 5%以上だけ引き出しラベル
+      const am=ang(acc+frac/2);
+      const [lx0,ly0]=pt(am,R), [lx1,ly1]=pt(am,R+3.4);
+      const right=Math.cos(am)>=0;
+      const [tx,ty]=pt(am,R+4);
+      labels+=`<line x1="${lx0.toFixed(2)}" y1="${ly0.toFixed(2)}" x2="${lx1.toFixed(2)}" y2="${ly1.toFixed(2)}" stroke="${col}" stroke-width="0.4"/>
+        <text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" font-size="2.4" fill="#1A1D21" text-anchor="${right?'start':'end'}" dominant-baseline="middle">${esc(c)}</text>`;
+    }
+    acc+=frac;
+  });
+  svg.innerHTML=bg+arcs+labels;
+}
 async function render(){
   const y=Y(), k=mkey(cur), d=await year(y);
   $('monthLabel').textContent=y+'年'+(cur.getMonth()+1)+'月';
@@ -836,22 +870,18 @@ async function render(){
   });
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   $('dTotal').textContent=yen(bookOut);
-  const ring='<circle cx="21" cy="21" r="15.9155" fill="none" stroke="#EDEFF2" stroke-width="5.2"/>';
-  let off=0;
-  $('donut').innerHTML=ring+(rows.length?rows.map(([c,v])=>{
-    const p=v/bookOut*100;
-    const s=`<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${cmeta('expense',c).color}" stroke-width="5.2" stroke-dasharray="${p.toFixed(2)} ${(100-p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;
-    off+=p;return s;
-  }).join(''):'');
+  drawDonut(rows);
+  const posTotalForPct=rows.filter(([,v])=>v>0).reduce((s,[,v])=>s+v,0)||1;
   $('catList').innerHTML=rows.length?rows.map(([c,v])=>{
     const subs=submap[c]?Object.entries(submap[c]).sort((a,b)=>b[1]-a[1]):[];
     const col=cmeta('expense',c).color;
     const known=v-subs.reduce((s,[,sv])=>s+sv,0); // サブ未設定ぶん
     const open=openCats.has(c);
+    const pct=v>0?Math.round(v/posTotalForPct*100)+'%':'';   // マイナスは%を出さない
     const head=`<div class="crow ${subs.length?'has-sub':''}" ${subs.length?`data-cat="${esc(c)}"`:''}>
         <span class="dot" style="background:${col}"></span>
         <span class="cname">${subs.length?`<span class="caret ${open?'open':''}">▸</span>`:''}${esc(c)}</span>
-        <span class="cpct num">${Math.round(v/bookOut*100)}%</span>
+        <span class="cpct num">${pct}</span>
         <span class="camt num">${yen(v)}</span>
       </div>`;
     let body='';
@@ -1866,6 +1896,7 @@ $('wipe').onclick=async()=>{
 
 /* ============ 起動 ============ */
 (async()=>{
+  $('verLabel').textContent=APP_VERSION;
   if(!canSave){
     const w=$('warnBanner');w.hidden=false;
     w.textContent='このブラウザではデータを保存できません（プライベートブラウズ等）。設定を確認してください。';
