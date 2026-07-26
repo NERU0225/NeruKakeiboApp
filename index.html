@@ -138,6 +138,23 @@
   .bill-tap:active{background:var(--bg)}
   .bill-arrow{color:var(--sub);font-size:14px;margin-left:2px}
   .sheet-tall{max-height:88vh}
+  .dt-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .dt-head b{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .dt-head b.out{color:var(--red)}
+  .dt-head b.in{color:var(--blue)}
+  .dt-item{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+    padding:10px 0;border-top:1px solid var(--line)}
+  .dt-item:first-child{border-top:none}
+  .dt-l{flex:1;min-width:0}
+  .dt-nm{font-size:14px;font-weight:500;overflow-wrap:anywhere}
+  .dt-meta{font-size:11px;color:var(--sub);margin-top:2px;overflow-wrap:anywhere}
+  .dt-r{flex:none;text-align:right}
+  .dt-calc{font-size:11px;color:var(--sub);font-variant-numeric:tabular-nums}
+  .dt-sub{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+  .dt-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+  .dt-row>span:first-child{color:var(--sub);font-size:12px;flex:none}
+  .dt-row>span:last-child{text-align:right;min-width:0;overflow-wrap:anywhere}
   .bill-row:first-of-type{border-top:none}
   .bill-name{font-size:14px;font-weight:500}
   .bill-when{font-size:11px;color:var(--sub);margin-top:2px}
@@ -645,6 +662,29 @@
   <div id="cardHistList"></div>
 </div>
 
+<div class="sheet sheet-tall" id="detailSheet" role="dialog" aria-modal="true" aria-label="記録の詳細">
+  <div class="grab"></div>
+  <div class="dt-head">
+    <div>
+      <h3 id="dtTitle" style="margin:0">記録</h3>
+      <p class="hint" id="dtDate" style="margin:2px 0 0"></p>
+    </div>
+    <b id="dtAmt" class="num">¥0</b>
+  </div>
+  <p class="card-title" style="margin:16px 0 0">明細</p>
+  <div id="dtItems"></div>
+  <div class="sumbox">
+    <div class="sumrow"><span>小計</span><b id="dtBase">¥0</b></div>
+    <div class="sumrow" id="dtTaxRow" hidden><span>消費税</span><b id="dtTax">¥0</b></div>
+    <div class="total"><span>合計</span><b id="dtTotal">¥0</b></div>
+  </div>
+  <div id="dtInfo" style="margin-top:14px"></div>
+  <div class="actions">
+    <button class="btn btn-sub" id="dtClose">閉じる</button>
+    <button class="btn btn-primary" id="dtEdit">編集</button>
+  </div>
+</div>
+
 <div class="sheet" id="ymSheet" role="dialog" aria-modal="true" aria-label="年月をえらぶ">
   <div class="grab"></div>
   <h3>年月をえらぶ</h3>
@@ -659,7 +699,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v28';
+const APP_VERSION='v30';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -1162,7 +1202,11 @@ $('prev').onclick=async()=>{cur=new Date(Y(),cur.getMonth()-1,1);calSelDay=null;
 $('next').onclick=async()=>{cur=new Date(Y(),cur.getMonth()+1,1);calSelDay=null;await render()};
 
 /* ---- 年月ジャンプ ---- */
-const open=el=>{el.classList.add('open');$('scrim').classList.add('open')};
+const open=el=>{
+  // シートは常に1枚だけ開く（重なって表示が壊れるのを防ぐ）
+  document.querySelectorAll('.sheet').forEach(s=>{if(s!==el)s.classList.remove('open')});
+  el.classList.add('open');$('scrim').classList.add('open');
+};
 const closeAll=()=>{document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));$('scrim').classList.remove('open')};
 $('monthLabel').onclick=async()=>{
   const now=new Date().getFullYear();
@@ -1396,10 +1440,77 @@ $('scrim').onclick=closeAll;
 document.onkeydown=e=>{if(e.key==='Escape')closeAll()};
 document.body.addEventListener('click',async e=>{
   const b=e.target.closest('.item');if(!b)return;
-  const d=await year(Y());
-  const en=d.entries.find(x=>String(x.id)===b.dataset.id);
-  if(en)openSheet(en);
+  const en=await findEntry(b.dataset.id);
+  if(!en)return;
+  // カード利用履歴・検索結果からは参照画面、それ以外（ホーム・カレンダー）は直接編集
+  if(b.closest('#cardHistList')||b.closest('#histList'))openDetail(en);
+  else openSheet(en);
 });
+/* 記録を年をまたいで探す */
+async function findEntry(id){
+  for(const y of meta.years){
+    const d=await year(y);
+    const en=d.entries.find(x=>String(x.id)===String(id));
+    if(en)return en;
+  }
+  return null;
+}
+/* 記録が保存されている年を探す */
+async function findEntryYear(id){
+  for(const y of meta.years){
+    const d=await year(y);
+    if(d.entries.some(x=>x.id===id))return y;
+  }
+  return Y();
+}
+/* ---- 参照（詳細）画面 ---- */
+let detailEntry=null;
+function openDetail(en){
+  detailEntry=en;
+  const isOut=en.type==='expense';
+  const uniq=[...new Set(en.items.map(i=>i.category))];
+  $('dtTitle').textContent=en.store||uniq[0]||'（店名なし）';
+  const dt=new Date(en.date+'T00:00:00');
+  const W=['日','月','火','水','木','金','土'];
+  $('dtDate').textContent=`${dt.getFullYear()}/${dt.getMonth()+1}/${dt.getDate()}(${W[dt.getDay()]}) ・ ${isOut?'支出':'収入'}`;
+  const tb=taxBreakdown(en.items);
+  $('dtAmt').textContent=(isOut?'−':'+')+yen(tb.total);
+  $('dtAmt').className='num '+(isOut?'out':'in');
+  // 明細（税の設定も出す）
+  $('dtItems').innerHTML=en.items.map(i=>{
+    const tax=i.taxIn===false?`税抜 ${i.rate||defaultRate()}%`:'税込';
+    const cat=esc(i.category)+(i.sub?' › '+esc(i.sub):'');
+    return `<div class="dt-item">
+      <div class="dt-l">
+        <div class="dt-nm">${esc(i.name||'（品名なし）')}</div>
+        <div class="dt-meta">${cat} ・ ${tax}</div>
+      </div>
+      <div class="dt-r">
+        <div class="dt-calc">${yen(i.amount)} × ${i.qty||1}</div>
+        <div class="dt-sub">${yen(lineSub(i))}</div>
+      </div>
+    </div>`;
+  }).join('');
+  $('dtBase').textContent=yen(tb.base);
+  $('dtTax').textContent=yen(tb.taxTotal);
+  $('dtTaxRow').hidden=(tb.taxTotal===0&&tb.exSum===0);
+  $('dtTotal').textContent=yen(tb.total);
+  // 支払い方法・経費・メモ
+  let info=`<div class="dt-row"><span>${isOut?'支払い':'経路'}</span><span>${esc(en.method||'未設定')}</span></div>`;
+  if(isExp(en)){
+    const st=en.status||'unclaimed';
+    const days=[`立替 ${md(en.date)}`];
+    if(en.claimDate)days.push(`申請 ${md(en.claimDate)}`);
+    if(en.settleDate)days.push(`精算 ${md(en.settleDate)}`);
+    info+=`<div class="dt-row"><span>経費</span>
+      <span><span class="stag ${st}">${STATUS[st]}</span>${days.join(' ・ ')}</span></div>`;
+  }
+  if(en.memo)info+=`<div class="dt-row"><span>メモ</span><span>${esc(en.memo)}</span></div>`;
+  $('dtInfo').innerHTML=info;
+  open($('detailSheet'));
+}
+$('dtClose').onclick=closeAll;
+$('dtEdit').onclick=()=>{if(detailEntry)openSheet(detailEntry)};
 $('saveBtn').onclick=async()=>{
   const date=$('fDate').value;
   if(!date){toast('日付を入力してください');return}
@@ -1419,8 +1530,9 @@ $('saveBtn').onclick=async()=>{
   const data={date,type,store:$('fStore').value.trim(),memo:$('fMemo').value.trim(),items,expense,method};
   const ny=+date.slice(0,4);
   if(editId){
-    const oy=Y(), od=await year(oy);
+    const oy=await findEntryYear(editId), od=await year(oy);
     const old=od.entries.find(x=>x.id===editId);
+    if(!old){toast('記録が見つかりませんでした');return}
     const status=expense?((old&&old.status)||'unclaimed'):undefined;
     data.status=status;
     if(expense){
@@ -1451,9 +1563,12 @@ $('saveBtn').onclick=async()=>{
   closeAll();await render();toast(editId?'変更しました':'保存しました');
 };
 $('del').onclick=async()=>{
-  const d=await year(Y());
-  d.entries=d.entries.filter(e=>e.id!==editId);
-  await saveYear(Y());closeAll();await render();toast('削除しました');
+  await eachYear(d=>{
+    const n=d.entries.length;
+    d.entries=d.entries.filter(e=>e.id!==editId);
+    return d.entries.length!==n;      // 変わった年だけ保存
+  });
+  closeAll();await render();toast('削除しました');
 };
 
 /* ============ 予算 ============ */
