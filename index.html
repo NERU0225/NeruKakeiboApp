@@ -71,6 +71,12 @@
   .b-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-top:7px}
 
   .donut-wrap{position:relative;width:230px;margin:4px auto 18px}
+  .hist-sum{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .hist-sum>div:first-child{display:flex;flex-direction:column;gap:2px}
+  .hist-sum span{font-size:12px;color:var(--sub)}
+  .hist-sum b{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .hist-sum-count{font-size:12px;color:var(--sub);text-align:right;white-space:nowrap}
+  .hist-more{text-align:center;font-size:12px;color:var(--sub);padding:12px 0}
   .donut{display:block;width:100%}
   .donut-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
   .donut-c span{font-size:11px;color:var(--sub)}
@@ -127,6 +133,11 @@
   .mrow .mm-sub{font-size:11px;color:var(--sub);margin-top:2px}
   .bill{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
   .bill-row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+  .bill-tap{width:100%;background:none;border-top:1px solid var(--line);text-align:left;cursor:pointer;font-family:var(--font);color:inherit}
+  .bill-tap:first-of-type{border-top:none}
+  .bill-tap:active{background:var(--bg)}
+  .bill-arrow{color:var(--sub);font-size:14px;margin-left:2px}
+  .sheet-tall{max-height:88vh}
   .bill-row:first-of-type{border-top:none}
   .bill-name{font-size:14px;font-weight:500}
   .bill-when{font-size:11px;color:var(--sub);margin-top:2px}
@@ -349,6 +360,13 @@
         <div class="bar"><i id="bBar" style="width:0"></i></div>
         <div class="b-foot"><span id="bUsed"></span><span id="bTotal"></span></div>
       </div>
+      <div class="card" id="homeBillCard" hidden>
+        <p class="card-title">カード請求</p>
+        <div class="bill-nav">
+          <button id="homeBillPrev">‹</button><b id="homeBillLabel"></b><button id="homeBillNext">›</button>
+        </div>
+        <div id="homeBillList"></div>
+      </div>
       <div class="card">
         <div class="b-head">
           <p class="card-title" style="margin:0">最近の入出金</p>
@@ -370,19 +388,53 @@
     </section>
 
     <section id="tab-book" hidden>
-      <div class="seg" id="expInclSeg" style="margin-bottom:12px">
-        <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
-        <button type="button" data-incl="0" aria-pressed="false">経費を除く</button>
+      <div class="seg" id="bookNav" style="margin-bottom:12px">
+        <button type="button" data-view="graph" aria-pressed="true">グラフ</button>
+        <button type="button" data-view="hist" aria-pressed="false">履歴</button>
       </div>
-      <div class="card">
-        <p class="card-title">支出の内訳</p>
-        <div class="donut-wrap">
-          <svg class="donut" viewBox="-6 -6 54 54" id="donut" role="img" aria-label="カテゴリ別支出の割合"></svg>
-          <div class="donut-c num"><span>支出合計</span><b id="dTotal">¥0</b></div>
+
+      <div id="bookGraph">
+        <div class="seg" id="bookPeriodSeg" style="margin-bottom:10px">
+          <button type="button" data-period="month" aria-pressed="true">月</button>
+          <button type="button" data-period="year" aria-pressed="false">年</button>
+          <button type="button" data-period="custom" aria-pressed="false">期間</button>
         </div>
-        <div id="catList"></div>
+        <div id="bookCustom" class="card" hidden style="padding:12px 14px">
+          <div class="field" style="border:none;padding:4px 0"><label for="bookFrom">開始</label><input type="date" id="bookFrom"></div>
+          <div class="field" style="padding:4px 0"><label for="bookTo">終了</label><input type="date" id="bookTo"></div>
+        </div>
+        <div class="seg" id="expInclSeg" style="margin-bottom:12px">
+          <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
+          <button type="button" data-incl="0" aria-pressed="false">経費を除く</button>
+        </div>
+        <div class="card">
+          <p class="card-title">支出の内訳</p>
+          <div class="donut-wrap">
+            <svg class="donut" viewBox="-6 -6 54 54" id="donut" role="img" aria-label="カテゴリ別支出の割合"></svg>
+            <div class="donut-c num"><span>支出合計</span><b id="dTotal">¥0</b></div>
+          </div>
+          <div id="catList"></div>
+        </div>
+        <div id="history"></div>
       </div>
-      <div id="history"></div>
+
+      <div id="bookHist" hidden>
+        <div class="field" style="border:none;padding:0 0 10px">
+          <input type="search" id="histSearch" placeholder="店名・品名・メモで検索" autocomplete="off">
+        </div>
+        <div class="seg" id="histScope" style="margin-bottom:12px">
+          <button type="button" data-scope="month" aria-pressed="true">今月</button>
+          <button type="button" data-scope="year" aria-pressed="false">今年</button>
+          <button type="button" data-scope="all" aria-pressed="false">全期間</button>
+        </div>
+        <div class="card" id="histSummary" hidden>
+          <div class="hist-sum">
+            <div><span id="histSumLabel">合計</span><b id="histSumAmt" class="num">¥0</b></div>
+            <div class="hist-sum-count" id="histSumCount"></div>
+          </div>
+        </div>
+        <div id="histList"></div>
+      </div>
     </section>
 
     <section id="tab-expense" hidden>
@@ -580,6 +632,19 @@
   </div>
 </div>
 
+<div class="sheet sheet-tall" id="cardHistSheet" role="dialog" aria-modal="true" aria-label="カードの利用履歴">
+  <div class="grab"></div>
+  <h3 id="cardHistTitle">カード</h3>
+  <p class="hint" id="cardHistSub" style="margin:-6px 0 12px"></p>
+  <div class="card">
+    <div class="hist-sum">
+      <div><span>利用合計</span><b id="cardHistAmt" class="num">¥0</b></div>
+      <div class="hist-sum-count" id="cardHistCount"></div>
+    </div>
+  </div>
+  <div id="cardHistList"></div>
+</div>
+
 <div class="sheet" id="ymSheet" role="dialog" aria-modal="true" aria-label="年月をえらぶ">
   <div class="grab"></div>
   <h3>年月をえらぶ</h3>
@@ -594,7 +659,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v26';
+const APP_VERSION='v28';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -716,6 +781,8 @@ function hilite(v,q){
 let entryExpense=false;              // 入力中の「経費」トグル状態
 let editStatus=null;                 // 編集中の記録の経費ステータス（新規はnull）
 let bookInclExp=true;               // 家計簿タブ：経費を含むか
+let bookPeriod='month';             // グラフの集計期間：month/year/custom
+let bookFrom='', bookTo='';         // customの開始・終了(YYYY-MM-DD)
 let expStatusFilter='unclaimed';    // 経費タブの表示状態
 const expSelected=new Set();        // 経費タブで選択中のID
 const STATUS={unclaimed:'申請前',claimed:'申請中',settled:'精算済'};
@@ -803,6 +870,25 @@ async function migrate(){
 }
 
 /* ============ 描画 ============ */
+async function collectBookEntries(){
+  // 集計グラフの対象記録を、期間モードに応じて集める
+  if(bookPeriod==='month'){
+    const d=await year(Y());
+    return d.entries.filter(e=>e.date.slice(0,7)===mkey(cur));
+  }
+  if(bookPeriod==='year'){
+    const d=await year(Y());
+    return [...d.entries];
+  }
+  // custom：bookFrom〜bookTo（両端含む）。年をまたいでも集める
+  if(!bookFrom||!bookTo)return [];
+  const lo=bookFrom<bookTo?bookFrom:bookTo, hi=bookFrom<bookTo?bookTo:bookFrom;
+  const ys=[];for(let y=+lo.slice(0,4);y<=+hi.slice(0,4);y++)ys.push(y);
+  const out=[];
+  for(const y of ys){const d=await year(y);
+    d.entries.forEach(e=>{if(e.date>=lo&&e.date<=hi)out.push(e)})}
+  return out;
+}
 function drawDonut(rows){
   const svg=$('donut');
   const cx=21,cy=21,R=15.9155,W=5.2;
@@ -846,8 +932,9 @@ async function render(){
   $('sNet').textContent=(net<0?'−':'')+yen(Math.abs(net));
   $('sNet').classList.toggle('minus',net<0);
 
-  // 家計簿タブの内訳用：経費を含む/除くで切り替える支出集計
-  const bookEs=es.filter(e=>e.type==='expense'&&(bookInclExp||!isExp(e)));
+  // 家計簿タブの内訳用：期間モード（月/年/期間）で対象を集め、経費を含む/除くで絞る
+  const periodEs=await collectBookEntries();
+  const bookEs=periodEs.filter(e=>e.type==='expense'&&(bookInclExp||!isExp(e)));
   const bookOut=bookEs.reduce((s,e)=>s+total(e),0);
 
   const b=d.budgets[k]||0, over=b&&out>b, pct=b?out/b*100:0;
@@ -870,6 +957,8 @@ async function render(){
   });
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   $('dTotal').textContent=yen(bookOut);
+  const dLabel=$('donut').closest('.donut-wrap').querySelector('.donut-c span');
+  if(dLabel)dLabel.textContent=bookPeriod==='year'?(Y()+'年 支出'):bookPeriod==='custom'?'期間の支出':'支出合計';
   drawDonut(rows);
   const posTotalForPct=rows.filter(([,v])=>v>0).reduce((s,[,v])=>s+v,0)||1;
   $('catList').innerHTML=rows.length?rows.map(([c,v])=>{
@@ -922,6 +1011,8 @@ async function render(){
   renderManage();renderYears();
   if(!$('tab-expense').hidden)renderExpense();
   if(!$('tab-cal').hidden)renderCalendar();
+  if(!$('tab-book').hidden&&!$('bookHist').hidden)renderHist();
+  await renderHomeBills();
 }
 function groupHTML(es){
   const g={};es.forEach(e=>(g[e.date]=g[e.date]||[]).push(e));
@@ -978,6 +1069,95 @@ $('expInclSeg').onclick=async e=>{
   [...$('expInclSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
   await render();
 };
+$('bookPeriodSeg').onclick=async e=>{
+  const b=e.target.closest('button');if(!b)return;
+  bookPeriod=b.dataset.period;
+  [...$('bookPeriodSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  $('bookCustom').hidden=bookPeriod!=='custom';
+  if(bookPeriod==='custom'&&(!bookFrom||!bookTo)){
+    // 初期値：今月の1日〜今日
+    const t=new Date();
+    bookFrom=mkey(cur)+'-01';
+    bookTo=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+    $('bookFrom').value=bookFrom;$('bookTo').value=bookTo;
+  }
+  await render();
+};
+$('bookFrom').onchange=async e=>{bookFrom=e.target.value;await render()};
+$('bookTo').onchange=async e=>{bookTo=e.target.value;await render()};
+
+/* ---- 集計タブ：グラフ/履歴 切替 ---- */
+let histScope='month';
+$('bookNav').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  [...$('bookNav').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  const hist=b.dataset.view==='hist';
+  $('bookGraph').hidden=hist;
+  $('bookHist').hidden=!hist;
+  if(hist)renderHist();
+};
+$('histScope').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  histScope=b.dataset.scope;
+  [...$('histScope').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  renderHist();
+};
+let histTimer=null;
+$('histSearch').addEventListener('input',()=>{
+  clearTimeout(histTimer);histTimer=setTimeout(renderHist,180); // 打鍵ごとの再描画を間引く
+});
+async function collectHistEntries(){
+  // 範囲に応じて対象記録を集める
+  if(histScope==='month'){
+    const d=await year(Y());
+    return d.entries.filter(e=>e.date.slice(0,7)===mkey(cur));
+  }
+  if(histScope==='year'){
+    const d=await year(Y());
+    return [...d.entries];
+  }
+  // all
+  const out=[];
+  for(const y of meta.years){const d=await year(y);out.push(...d.entries)}
+  return out;
+}
+function entryMatches(e,q){
+  if(!q)return true;
+  const hay=[e.store,e.memo,...(e.items||[]).map(i=>i.name),
+    ...(e.items||[]).map(i=>i.category),...(e.items||[]).map(i=>i.sub)]
+    .filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(q);
+}
+async function renderHist(){
+  const q=$('histSearch').value.trim().toLowerCase();
+  const all=await collectHistEntries();
+  const hit=all.filter(e=>entryMatches(e,q))
+    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+  // 合計（支出・収入を分けて）
+  const out=hit.filter(e=>e.type==='expense').reduce((s,e)=>s+total(e),0);
+  const inc=hit.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
+  const sumBox=$('histSummary');
+  if(q||hit.length){
+    sumBox.hidden=false;
+    const net=inc-out;
+    if(inc&&out){
+      $('histSumLabel').textContent='支出';$('histSumAmt').textContent=yen(out);
+      $('histSumCount').innerHTML=`収入 ${yen(inc)}<br>${hit.length}件`;
+    }else if(inc){
+      $('histSumLabel').textContent='収入';$('histSumAmt').textContent=yen(inc);
+      $('histSumCount').textContent=`${hit.length}件`;
+    }else{
+      $('histSumLabel').textContent=q?'該当の支出':'支出';$('histSumAmt').textContent=yen(out);
+      $('histSumCount').textContent=`${hit.length}件`;
+    }
+  }else sumBox.hidden=true;
+  // 一覧（多すぎる時は先頭200件）
+  const LIMIT=200;
+  const shown=hit.slice(0,LIMIT);
+  $('histList').innerHTML=shown.length?groupHTML(shown)
+    +(hit.length>LIMIT?`<p class="hist-more">ほか${hit.length-LIMIT}件。検索で絞り込めます</p>`:'')
+    :'<div class="card"><p class="empty">'+(q?'該当する記録がありません':'記録がありません')+'</p></div>';
+}
 $('prev').onclick=async()=>{cur=new Date(Y(),cur.getMonth()-1,1);calSelDay=null;await render()};
 $('next').onclick=async()=>{cur=new Date(Y(),cur.getMonth()+1,1);calSelDay=null;await render()};
 
@@ -1614,24 +1794,30 @@ function billPeriod(card,y,m){
   const start=new Date(prev.getFullYear(),prev.getMonth(),prev.getDate()+1); // その翌日（6/1）
   return {start,end};
 }
+async function allCardEntries(){
+  const all=[];
+  for(const y of meta.years){const d=await year(y);
+    d.entries.forEach(e=>{if(e.type==='expense'&&e.method)all.push(e)})}
+  return all;
+}
+function billEntriesOf(all,card,y,m){
+  const {start,end}=billPeriod(card,y,m);
+  return all.filter(e=>{
+    if(e.method!==card.name)return false;
+    const dt=new Date(e.date+'T00:00:00');
+    return dt>=start&&dt<=end;
+  }).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+}
 async function renderBills(){
   const cards=methods('expense').filter(m=>m.kind==='card');
   const box=$('billView');
   if(mmType!=='expense'||!cards.length){box.innerHTML='';return}
   const now=new Date();
   if(!billMonth)billMonth={y:now.getFullYear(),m:now.getMonth()};
-  // 全記録を集める
-  const all=[];
-  for(const y of meta.years){const d=await year(y);
-    d.entries.forEach(e=>{if(e.type==='expense'&&e.method)all.push(e)})}
+  const all=await allCardEntries();
   const rows=cards.map(card=>{
     const {start,end}=billPeriod(card,billMonth.y,billMonth.m);
-    const sum=all.filter(e=>{
-      if(e.method!==card.name)return false;
-      const dt=new Date(e.date+'T00:00:00');
-      return dt>=start&&dt<=end;
-    }).reduce((s,e)=>s+total(e),0);
-    const pm=(billMonth.m+1);
+    const sum=billEntriesOf(all,card,billMonth.y,billMonth.m).reduce((s,e)=>s+total(e),0);
     return {name:card.name,sum,payDay:card.payDay,
       period:`${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()}締め`};
   });
@@ -1640,13 +1826,55 @@ async function renderBills(){
     <div class="bill-nav">
       <button id="billPrev">‹</button><b>${billMonth.y}年${billMonth.m+1}月 引き落とし</b><button id="billNext">›</button>
     </div>
-    ${rows.map(r=>`<div class="bill-row">
+    ${rows.map(r=>`<button class="bill-row bill-tap" data-card="${esc(r.name)}">
       <div><div class="bill-name">${esc(r.name)}</div><div class="bill-when">${r.period} ・ ${billMonth.m+1}月${r.payDay}日引落し</div></div>
-      <div class="bill-amt">${yen(r.sum)}</div>
-    </div>`).join('')}
+      <div class="bill-amt">${yen(r.sum)} <span class="bill-arrow">›</span></div>
+    </button>`).join('')}
   </div>`;
   $('billPrev').onclick=()=>{billMonth.m--;if(billMonth.m<0){billMonth.m=11;billMonth.y--}renderBills()};
   $('billNext').onclick=()=>{billMonth.m++;if(billMonth.m>11){billMonth.m=0;billMonth.y++}renderBills()};
+  $('billView').querySelectorAll('[data-card]').forEach(b=>{
+    b.onclick=()=>openCardHistory(b.dataset.card,billMonth.y,billMonth.m);
+  });
+}
+/* ホームのカード請求 */
+let homeBillMonth=null;
+async function renderHomeBills(){
+  const cards=methods('expense').filter(m=>m.kind==='card');
+  $('homeBillCard').hidden=!cards.length;
+  if(!cards.length)return;
+  const now=new Date();
+  if(!homeBillMonth)homeBillMonth={y:now.getFullYear(),m:now.getMonth()};
+  $('homeBillLabel').textContent=`${homeBillMonth.y}年${homeBillMonth.m+1}月 引き落とし`;
+  const all=await allCardEntries();
+  $('homeBillList').innerHTML=cards.map(card=>{
+    const {start,end}=billPeriod(card,homeBillMonth.y,homeBillMonth.m);
+    const sum=billEntriesOf(all,card,homeBillMonth.y,homeBillMonth.m).reduce((s,e)=>s+total(e),0);
+    return `<button class="bill-row bill-tap" data-hcard="${esc(card.name)}">
+      <div><div class="bill-name">${esc(card.name)}</div>
+        <div class="bill-when">${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()}締め ・ ${homeBillMonth.m+1}月${card.payDay}日引落し</div></div>
+      <div class="bill-amt">${yen(sum)} <span class="bill-arrow">›</span></div>
+    </button>`;
+  }).join('');
+  $('homeBillList').querySelectorAll('[data-hcard]').forEach(b=>{
+    b.onclick=()=>openCardHistory(b.dataset.hcard,homeBillMonth.y,homeBillMonth.m);
+  });
+}
+$('homeBillPrev').onclick=()=>{homeBillMonth.m--;if(homeBillMonth.m<0){homeBillMonth.m=11;homeBillMonth.y--}renderHomeBills()};
+$('homeBillNext').onclick=()=>{homeBillMonth.m++;if(homeBillMonth.m>11){homeBillMonth.m=0;homeBillMonth.y++}renderHomeBills()};
+/* カード利用履歴シート */
+async function openCardHistory(cardName,y,m){
+  const card=methodByName('expense',cardName);if(!card)return;
+  const all=await allCardEntries();
+  const list=billEntriesOf(all,card,y,m);
+  const {start,end}=billPeriod(card,y,m);
+  const sum=list.reduce((s,e)=>s+total(e),0);
+  $('cardHistTitle').textContent=cardName;
+  $('cardHistSub').textContent=`${y}年${m+1}月引き落とし ・ ${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()}締め`;
+  $('cardHistAmt').textContent=yen(sum);
+  $('cardHistCount').textContent=`${list.length}件`;
+  $('cardHistList').innerHTML=list.length?groupHTML(list):'<div class="card"><p class="empty">この期間の利用はありません</p></div>';
+  open($('cardHistSheet'));
 }
 
 /* ============ カテゴリ管理 ============ */
