@@ -699,7 +699,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v30';
+const APP_VERSION='v31';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -1441,10 +1441,8 @@ document.onkeydown=e=>{if(e.key==='Escape')closeAll()};
 document.body.addEventListener('click',async e=>{
   const b=e.target.closest('.item');if(!b)return;
   const en=await findEntry(b.dataset.id);
-  if(!en)return;
-  // カード利用履歴・検索結果からは参照画面、それ以外（ホーム・カレンダー）は直接編集
-  if(b.closest('#cardHistList')||b.closest('#histList'))openDetail(en);
-  else openSheet(en);
+  // ＋ボタン以外からの遷移はすべて参照画面を経由する
+  if(en)openDetail(en);
 });
 /* 記録を年をまたいで探す */
 async function findEntry(id){
@@ -1661,7 +1659,7 @@ $('expList').onclick=async e=>{
   const op=e.target.closest('[data-open]');
   if(op){const d=await year(+op.dataset.y);
     const en=d.entries.find(x=>x.id===+op.dataset.open);
-    if(en){cur=new Date(+op.dataset.y,+en.date.slice(5,7)-1,1);openSheet(en)}}
+    if(en)openDetail(en);}
 };
 async function changeStatus(ids,to){
   const set=new Set(ids), t0=today();
