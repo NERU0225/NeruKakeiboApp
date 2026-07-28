@@ -699,7 +699,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v31';
+const APP_VERSION='v32';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -942,11 +942,16 @@ function drawDonut(rows){
   let acc=0, arcs='', labels='';
   pos.forEach(([c,v])=>{
     const frac=v/posTotal;
-    const a0=ang(acc+gap/2), a1=ang(acc+frac-gap/2);
-    const large=(frac-gap)>0.5?1:0;
-    const [x0,y0]=pt(a0,R), [x1,y1]=pt(a1,R);
     const col=cmeta('expense',c).color;
-    arcs+=`<path d="M ${x0.toFixed(3)} ${y0.toFixed(3)} A ${R} ${R} 0 ${large} 1 ${x1.toFixed(3)} ${y1.toFixed(3)}" fill="none" stroke="${col}" stroke-width="${W}"/>`;
+    if(frac>=0.9999){
+      // 100%（1カテゴリのみ）は始点と終点が同じになり弧が描けないので、円で描く
+      arcs+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${col}" stroke-width="${W}"/>`;
+    }else{
+      const a0=ang(acc+gap/2), a1=ang(acc+frac-gap/2);
+      const large=(frac-gap)>0.5?1:0;
+      const [x0,y0]=pt(a0,R), [x1,y1]=pt(a1,R);
+      arcs+=`<path d="M ${x0.toFixed(3)} ${y0.toFixed(3)} A ${R} ${R} 0 ${large} 1 ${x1.toFixed(3)} ${y1.toFixed(3)}" fill="none" stroke="${col}" stroke-width="${W}"/>`;
+    }
     if(frac>=0.05){                                    // 5%以上だけ引き出しラベル
       const am=ang(acc+frac/2);
       const [lx0,ly0]=pt(am,R), [lx1,ly1]=pt(am,R+3.4);
@@ -1026,7 +1031,11 @@ async function render(){
     return head+body;
   }).join(''):'<p class="empty">支出の記録があると内訳が出ます</p>';
 
-  $('history').innerHTML=es.length?groupHTML(es):'<div class="card"><p class="empty">この月の記録はまだありません</p></div>';
+  // グラフ下の一覧は、グラフと同じ期間の記録を出す（期間指定と食い違わないように）
+  const histEs=[...periodEs].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+  const emptyMsg=bookPeriod==='month'?'この月の記録はまだありません'
+    :bookPeriod==='year'?'この年の記録はまだありません':'この期間の記録はありません';
+  $('history').innerHTML=histEs.length?groupHTML(histEs):`<div class="card"><p class="empty">${emptyMsg}</p></div>`;
   $('recent').innerHTML=es.length?'<div class="items">'+es.slice(0,5).map(itemHTML).join('')+'</div>':'<p class="empty">「＋」から入力できます</p>';
 
   $('totalBudget').value=b||'';
@@ -1121,10 +1130,25 @@ $('bookPeriodSeg').onclick=async e=>{
     bookTo=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
     $('bookFrom').value=bookFrom;$('bookTo').value=bookTo;
   }
+  syncBookRangeLimits();
   await render();
 };
-$('bookFrom').onchange=async e=>{bookFrom=e.target.value;await render()};
-$('bookTo').onchange=async e=>{bookTo=e.target.value;await render()};
+$('bookFrom').onchange=async e=>{
+  bookFrom=e.target.value;
+  // 開始が終了より後になったら、終了を開始に合わせる（ありえない期間を作らせない）
+  if(bookFrom&&bookTo&&bookFrom>bookTo){bookTo=bookFrom;$('bookTo').value=bookTo}
+  syncBookRangeLimits();await render();
+};
+$('bookTo').onchange=async e=>{
+  bookTo=e.target.value;
+  if(bookFrom&&bookTo&&bookTo<bookFrom){bookFrom=bookTo;$('bookFrom').value=bookFrom}
+  syncBookRangeLimits();await render();
+};
+function syncBookRangeLimits(){
+  // 日付ピッカー側でも選べないようにする
+  $('bookFrom').max=bookTo||'';
+  $('bookTo').min=bookFrom||'';
+}
 
 /* ---- 集計タブ：グラフ/履歴 切替 ---- */
 let histScope='month';
