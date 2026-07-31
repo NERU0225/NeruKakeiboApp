@@ -699,7 +699,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v32';
+const APP_VERSION='v33';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -990,6 +990,7 @@ async function render(){
   $('bUsed').textContent=b?Math.round(pct)+'% 使用':'';
   $('bTotal').textContent=b?'予算 '+yen(b):'';
 
+  // グラフの内訳用（期間モード・経費フィルタが効く）
   const map={}, submap={};
   bookEs.forEach(e=>{
     const tb=taxBreakdown(e.items);
@@ -998,6 +999,14 @@ async function render(){
       map[i.category]=(map[i.category]||0)+v;
       if(i.sub){submap[i.category]=submap[i.category]||{};
         submap[i.category][i.sub]=(submap[i.category][i.sub]||0)+v}
+    });
+  });
+  // 予算タブ用：常に「表示中の月」の実支出（経費も含む）で集計する
+  const monthCatMap={};
+  es.filter(e=>e.type==='expense').forEach(e=>{
+    const tb=taxBreakdown(e.items);
+    e.items.forEach((i,idx)=>{
+      monthCatMap[i.category]=(monthCatMap[i.category]||0)+lineSub(i)+tb.perItemTax[idx];
     });
   });
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
@@ -1044,7 +1053,7 @@ async function render(){
   $('tbUsed').textContent=b?yen(out)+' 使用':'予算が未設定です';
   $('tbLeft').textContent=b?(over?yen(out-b)+' 超過':yen(b-out)+' 残り'):'';
   $('catBudgets').innerHTML=cats('expense').map(c=>{
-    const cb=(d.catBudgets[k]||{})[c.name]||0, used=map[c.name]||0;
+    const cb=(d.catBudgets[k]||{})[c.name]||0, used=monthCatMap[c.name]||0;
     const p=cb?used/cb*100:0, ov=cb&&used>cb;
     return `<div class="brow">
       <div class="brow-t">
