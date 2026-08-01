@@ -152,6 +152,8 @@
   .amt-row .amt-in{flex:0 1 90px;min-width:0;border:1px solid var(--line);border-radius:7px;
     background:var(--card);color:var(--text);font-size:14px;padding:6px 8px;text-align:right;font-family:var(--font)}
   .amt-row .rm{background:none;border:none;color:var(--sub);font-size:15px;cursor:pointer;padding:4px 6px;line-height:1}
+  .amt-row .pay-sel{flex:1 1 auto;min-width:0;border:1px solid var(--line);border-radius:7px;
+    background:var(--card);color:var(--text);font-size:13px;padding:6px 8px;font-family:var(--font)}
   .amt-tax{display:flex;gap:6px;align-items:center;padding:0 0 8px 0}
   .dt-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
   .dt-head b{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -737,7 +739,10 @@
   <div class="field"><label for="fxStore">店名</label><input type="text" id="fxStore" placeholder="任意（例：〇〇不動産）" maxlength="30"></div>
   <div class="field"><label for="fxCat">カテゴリ</label><select id="fxCat" style="flex:1"></select></div>
   <div class="field" id="fxSubField" hidden><label for="fxSub">サブ</label><select id="fxSub" style="flex:1"></select></div>
-  <div class="field"><label for="fxMethod">支払い</label><select id="fxMethod" style="flex:1"></select></div>
+  <p class="card-title" style="margin:16px 0 6px">支払い方法</p>
+  <p class="hint" style="margin-bottom:8px">途中で変わったら「この日から◯◯で払う」を追加します。先の日付も登録できます。</p>
+  <div id="fxPays"></div>
+  <button class="addcat" id="fxAddPay">＋ 支払い方法の変更を追加</button>
 
   <p class="card-title" style="margin:16px 0 6px">支払う周期</p>
   <div class="seg" id="fxFreq">
@@ -806,7 +811,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v40';
+const APP_VERSION='v41';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -2174,7 +2179,7 @@ async function openCardHistory(cardName,y,m){
 /* ============ 固定費 ============ */
 const fixedList=()=>meta.fixed||(meta.fixed=[]);
 const DOW=['日','月','火','水','木','金','土'];
-let fxEdit=null, fxFreq='month', fxAmounts=[], fxNoEnd=true;
+let fxEdit=null, fxFreq='month', fxAmounts=[], fxPays=[], fxNoEnd=true;
 
 /* 周期の説明文 */
 function fixedFreqText(f){
@@ -2189,6 +2194,14 @@ function amountAt(f,date){
   let hit=null;
   for(const a of list){if(a.from<=date)hit=a}
   return hit||list[0];       // 開始前ならいちばん古い設定を使う
+}
+/* その日に適用される支払い方法を返す（金額と同じ考え方） */
+function payAt(f,date){
+  const list=[...(f.payments||[])].sort((a,b)=>a.from<b.from?-1:1);
+  if(!list.length)return f.method||'';   // 旧データ（単一の支払い方法）
+  let hit=null;
+  for(const p of list){if(p.from<=date)hit=p}
+  return (hit||list[0]).method||'';
 }
 /* 開始〜終了(または今日)までの支払日をすべて出す */
 function fixedOccurrences(f,until){
@@ -2250,7 +2263,7 @@ async function generateFixed(){
       if(item.taxIn===false)item.rate=a.rate||defaultRate();
       d.entries.push({id:Date.now()+Math.floor(Math.random()*10000),
         date,type:'expense',store:f.store||f.name,memo:'',items:[item],
-        expense:false,method:f.method||'',fixedId:f.id});
+        expense:false,method:payAt(f,date),fixedId:f.id});
       touched.add(y);made++;
     }
   }
@@ -2268,7 +2281,7 @@ function renderFixed(){
     return `<div class="fx-row ${ended?'fx-off':''}">
       <div class="fx-main">
         <div class="fx-nm">${esc(f.name)}${ended?'（終了）':''}</div>
-        <div class="fx-meta">${fixedFreqText(f)} ・ ${esc(f.category)} ・ ${esc(f.method||'未設定')}</div>
+        <div class="fx-meta">${fixedFreqText(f)} ・ ${esc(f.category)} ・ ${esc(payAt(f,td)||'未設定')}</div>
         <div class="fx-meta">${period}</div>
       </div>
       <span class="fx-amt">${a?yen(a.amount):'—'}</span>
@@ -2293,10 +2306,11 @@ function openFixedSheet(f){
   const cs=cats('expense');
   $('fxCat').innerHTML=cs.map(c=>`<option value="${esc(c.name)}" ${f&&f.category===c.name?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('');
   fxSyncSub(f?f.sub:'');
-  // 支払い方法
-  const ms=methods('expense');
-  $('fxMethod').innerHTML=ms.length?ms.map(m=>`<option value="${esc(m.name)}" ${f&&f.method===m.name?'selected':''}>${esc(m.name)}</option>`).join('')
-    :'<option value="">（未登録）</option>';
+  // 支払い方法（日付つきで複数持てる）
+  const firstMs=methods('expense')[0];
+  fxPays=f?((f.payments&&f.payments.length)?f.payments.map(p=>({...p}))
+        :[{from:f.start||today(),method:f.method||(firstMs?firstMs.name:'')}])
+       :[{from:today(),method:firstMs?firstMs.name:''}];
   // 周期
   fxFreq=f?f.freq:'month';
   [...$('fxFreq').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.freq===fxFreq));
@@ -2314,7 +2328,7 @@ function openFixedSheet(f){
   // 金額
   fxAmounts=f?(f.amounts||[]).map(a=>({...a})):[{from:today(),amount:'',taxIn:true,rate:defaultRate()}];
   if(!fxAmounts.length)fxAmounts=[{from:today(),amount:'',taxIn:true,rate:defaultRate()}];
-  drawFxAmounts();
+  drawFxPays();drawFxAmounts();
   open($('fixedSheet'));
 }
 function fxSyncSub(cur){
@@ -2340,6 +2354,34 @@ $('fxNoEnd').onclick=()=>{
   fxNoEnd=!fxNoEnd;
   $('fxNoEnd').setAttribute('aria-checked',fxNoEnd?'true':'false');
   $('fxEndField').hidden=fxNoEnd;
+};
+function drawFxPays(){
+  const ms=methods('expense');
+  $('fxPays').innerHTML=fxPays.map((p,i)=>`<div class="amt-row">
+    <input type="date" data-pi="${i}" data-pf="from" value="${p.from||''}">
+    <select class="pay-sel" data-pi="${i}" data-pf="method">
+      ${ms.length?ms.map(m=>`<option value="${esc(m.name)}" ${p.method===m.name?'selected':''}>${esc(m.name)}</option>`).join('')
+        :'<option value="">（未登録）</option>'}
+    </select>
+    ${fxPays.length>1?`<button type="button" class="rm" data-prmv="${i}" aria-label="消す">✕</button>`:''}
+  </div>`).join('');
+}
+$('fxPays').addEventListener('input',e=>{
+  const t=e.target;if(t.dataset.pi===undefined)return;
+  fxPays[+t.dataset.pi][t.dataset.pf]=t.value;
+});
+$('fxPays').addEventListener('change',e=>{
+  const t=e.target;if(t.dataset.pi===undefined)return;
+  fxPays[+t.dataset.pi][t.dataset.pf]=t.value;
+});
+$('fxPays').addEventListener('click',e=>{
+  const rm=e.target.closest('[data-prmv]');
+  if(rm){fxPays.splice(+rm.dataset.prmv,1);drawFxPays()}
+});
+$('fxAddPay').onclick=()=>{
+  const last=fxPays[fxPays.length-1]||{};
+  fxPays.push({from:today(),method:last.method||''});
+  drawFxPays();
 };
 function drawFxAmounts(){
   $('fxAmounts').innerHTML=fxAmounts.map((a,i)=>{
@@ -2381,8 +2423,12 @@ $('fxAddAmount').onclick=()=>{
 $('fxSave').onclick=async()=>{
   const name=$('fxName').value.trim();
   if(!name){toast('品名を入力してください');return}
-  const method=$('fxMethod').value;
-  if(!method){toast('支払い方法を選んでください');return}
+  const start0=$('fxStart').value;
+  const payments=fxPays
+    .map(p=>({from:p.from||start0,method:p.method||''}))
+    .filter(p=>p.method)
+    .sort((a,b)=>a.from<b.from?-1:1);
+  if(!payments.length){toast('支払い方法を選んでください');return}
   const start=$('fxStart').value;
   if(!start){toast('開始日を入力してください');return}
   const end=fxNoEnd?'':$('fxEnd').value;
@@ -2397,7 +2443,7 @@ $('fxSave').onclick=async()=>{
     id:fxEdit||Date.now(),
     name,store:$('fxStore').value.trim(),
     category:$('fxCat').value,sub:$('fxSub').value||'',
-    method,freq:fxFreq,
+    payments,freq:fxFreq,
     dow:fxFreq==='week'?+$('fxDow').value:undefined,
     month:fxFreq==='year'?+$('fxMonth').value:undefined,
     day:fxFreq==='week'?undefined:+$('fxDay').value,
@@ -2790,6 +2836,11 @@ $('wipe').onclick=async()=>{
   if(!meta.methods){seedMethods();await saveMeta()}
   if(!meta.rates){meta.rates=[...DEFAULT_RATES];meta.defaultRate=10;await saveMeta()}
   if(!meta.fixed){meta.fixed=[];await saveMeta()}
+  else{ // 旧データ：単一の支払い方法を日付つきの形に移す
+    let fp=false;
+    meta.fixed.forEach(f=>{if(!f.payments){f.payments=[{from:f.start||today(),method:f.method||''}];delete f.method;fp=true}});
+    if(fp)await saveMeta();
+  }
   await year(Y());
   const made=await generateFixed();
   await render();
