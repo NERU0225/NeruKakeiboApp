@@ -811,7 +811,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v41';
+const APP_VERSION='v42';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -2242,6 +2242,21 @@ function fixedOccurrences(f,until){
   return out;
 }
 /* 固定費から記録を自動生成する（重複は作らない） */
+/* 設定を変えたとき、今の設定では作られないはずの自動生成記録を消す
+   （開始日を後ろにずらした、終了日を設けた、支払日を変えた場合など）
+   手で追加した記録には fixedId が付かないので影響しない */
+async function cleanupFixed(f){
+  const valid=new Set(fixedOccurrences(f,today()));
+  let removed=0;
+  await eachYear(d=>{
+    const before=d.entries.length;
+    d.entries=d.entries.filter(e=>!(e.fixedId===f.id&&!valid.has(e.date)));
+    const diff=before-d.entries.length;
+    removed+=diff;
+    return diff>0;
+  });
+  return removed;
+}
 async function generateFixed(){
   const list=fixedList();
   if(!list.length)return 0;
@@ -2454,9 +2469,11 @@ $('fxSave').onclick=async()=>{
   if(idx>=0)l[idx]=obj;else l.push(obj);
   await saveMeta();
   closeAll();
+  const removed=await cleanupFixed(obj);   // 設定変更で不要になった分を消す
   const made=await generateFixed();
   renderFixed();await render();
-  toast(made?`保存しました（${made}件を記録）`:'保存しました');
+  const msg=[made?`${made}件を記録`:'',removed?`${removed}件を整理`:''].filter(Boolean).join('・');
+  toast(msg?`保存しました（${msg}）`:'保存しました');
 };
 $('fxDel').onclick=async()=>{
   const f=fixedList().find(x=>x.id===fxEdit);if(!f)return;
