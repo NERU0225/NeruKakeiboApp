@@ -266,14 +266,15 @@
   .cal-o{font-size:9px;color:var(--red);font-variant-numeric:tabular-nums}
   .cal-i{font-size:9px;color:var(--blue);font-variant-numeric:tabular-nums}
   .cal-daytitle{font-size:12px;color:var(--sub);padding:4px 4px 8px}
-  .sortable .sort-row{display:flex;align-items:center;background:var(--card);position:relative}
+  .sort-row{position:relative;background:var(--card)}
+  .sortable .sort-row{display:flex;align-items:center}
   .sortable .sort-row+.sort-row{border-top:1px solid var(--line)}
-  .sort-handle{flex:none;width:34px;text-align:center;color:var(--sub);font-size:17px;
+  .sort-handle{flex:none;width:30px;margin-left:-6px;text-align:center;color:#C7CDD4;font-size:17px;
     cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;line-height:1}
   .sort-body{flex:1;min-width:0}
   .sort-body .item{border-top:none}
-  .sort-row.dragging{z-index:3;box-shadow:0 6px 18px rgba(0,0,0,.16);border-radius:10px;opacity:.97}
-  .sorting{position:relative}
+  .sort-row.dragging{z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.18);border-radius:10px;opacity:.97}
+  .sorting .sort-row:not(.dragging){transition:transform .12s ease}
   .fab{position:fixed;right:calc(50% - 260px + 16px);bottom:calc(var(--tabh) + env(safe-area-inset-bottom) + 16px);
     z-index:6;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;background:var(--blue);
     color:#fff;font-size:28px;line-height:1;box-shadow:0 4px 14px rgba(18,121,212,.4)}
@@ -851,7 +852,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v47';
+const APP_VERSION='v48';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -2130,45 +2131,62 @@ async function renderCalDay(){
               :'<div class="card"><p class="empty">この日の記録はありません</p></div>');
   if(es.length)setupCalDaySort();
 }
-/* カレンダー日別一覧の並べ替え（ハンドルをつまんで上下に動かす）
-   iOSではHTML5のドラッグが使えないのでタッチ操作で実装する */
-function setupCalDaySort(){
-  const wrap=$('calDayItems');if(!wrap)return;
-  let dragEl=null, startY=0, rows=[];
+/* ============ 並べ替え（共通） ============
+   ハンドルをつまむと、指の位置にそのまま追従して動く。
+   iOSではHTML5のドラッグが使えないのでタッチ操作で実装する。
+   onDrop には、並べ替え後のキー配列が渡される。 */
+function makeSortable(wrap,onDrop){
+  if(!wrap||wrap._sortableReady)return;
+  wrap._sortableReady=true;
+  let el=null, startY=0, baseTop=0, moved=false;
   const rowsOf=()=>[...wrap.querySelectorAll('.sort-row')];
   const pointY=ev=>ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY;
 
   function begin(ev,handle){
-    dragEl=handle.closest('.sort-row');if(!dragEl)return;
-    rows=rowsOf();
+    el=handle.closest('.sort-row');if(!el)return;
     startY=pointY(ev);
-    dragEl.classList.add('dragging');
+    baseTop=el.getBoundingClientRect().top;
+    moved=false;
+    el.classList.add('dragging');
     wrap.classList.add('sorting');
     ev.preventDefault();
   }
   function move(ev){
-    if(!dragEl)return;
+    if(!el)return;
     ev.preventDefault();
-    const offset=pointY(ev)-startY;
-    dragEl.style.transform=`translateY(${offset}px)`;
-    const h=dragEl.offsetHeight;
-    const idx=rows.indexOf(dragEl);
-    // 半分より動いたら隣と入れ替える
-    if(offset<-h/2&&idx>0){
-      wrap.insertBefore(dragEl,rows[idx-1]);
-      rows=rowsOf();startY=pointY(ev);dragEl.style.transform='';
-    }else if(offset>h/2&&idx<rows.length-1){
-      wrap.insertBefore(rows[idx+1],dragEl);
-      rows=rowsOf();startY=pointY(ev);dragEl.style.transform='';
+    const y=pointY(ev);
+    // 指の移動量をそのまま反映する（つまんだ位置を基準にする）
+    el.style.transform=`translateY(${y-startY}px)`;
+    moved=true;
+    // 掴んでいる要素の中心と、他の行の中心を見比べて差し込む位置を決める
+    const myMid=baseTop+(y-startY)+el.offsetHeight/2;
+    for(const other of rowsOf()){
+      if(other===el)continue;
+      const r=other.getBoundingClientRect();
+      const mid=r.top+r.height/2;
+      const elAfterOther=!!(other.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING);
+      if(myMid<mid&&elAfterOther){
+        wrap.insertBefore(el,other);rebase(y);break;
+      }
+      if(myMid>mid&&!elAfterOther){
+        wrap.insertBefore(el,other.nextSibling);rebase(y);break;
+      }
     }
   }
+  /* 差し込みでDOM上の位置が変わっても、見た目が指からずれないよう基準を取り直す */
+  function rebase(y){
+    el.style.transform='';                               // いったん実位置に戻して
+    baseTop=el.getBoundingClientRect().top;              // 新しい定位置を測り
+    startY=y;                                            // 今の指の位置を基準にする
+  }
   async function end(){
-    if(!dragEl)return;
-    dragEl.style.transform='';
-    dragEl.classList.remove('dragging');
+    if(!el)return;
+    const target=el;
+    target.style.transform='';
+    target.classList.remove('dragging');
     wrap.classList.remove('sorting');
-    dragEl=null;
-    await saveCalDayOrder();
+    el=null;
+    if(moved&&onDrop)await onDrop(rowsOf().map(r=>r.dataset.sid));
   }
   wrap.addEventListener('touchstart',e=>{
     const h=e.target.closest('.sort-handle');if(h)begin(e,h);
@@ -2182,15 +2200,17 @@ function setupCalDaySort(){
   document.addEventListener('mousemove',move);
   document.addEventListener('mouseup',end);
 }
+function setupCalDaySort(){
+  makeSortable($('calDayItems'),saveCalDayOrder);
+}
 /* 表示されている順に order を振り直して保存する */
-async function saveCalDayOrder(){
-  const wrap=$('calDayItems');if(!wrap||!calSelDay)return;
-  const ids=[...wrap.querySelectorAll('.sort-row')].map(r=>+r.dataset.sid);
+async function saveCalDayOrder(ids){
+  if(!calSelDay||!ids)return;
   const y=+calSelDay.slice(0,4);
   const d=await year(y);
   let changed=false;
-  ids.forEach((id,i)=>{
-    const e=d.entries.find(x=>x.id===id);
+  ids.forEach((sid,i)=>{
+    const e=d.entries.find(x=>String(x.id)===String(sid));
     if(e&&e.order!==i){e.order=i;changed=true}
   });
   if(changed){await saveYear(y);await render()}
@@ -2266,22 +2286,23 @@ function renderMethods(){
   const l=methods(mmType);
   $('mmList').innerHTML=l.map((m,i)=>{
     const sub=m.kind==='card'&&m.closingDay?`締め ${m.closingDay}日 ・ 引落し 翌月${m.payDay}日`:'';
-    return `<div class="mrow">
+    return `<div class="mrow sort-row" data-sid="${esc(m.name)}">
+      <span class="sort-handle" aria-label="並べ替え">≡</span>
       <div style="flex:1;min-width:0">
         <span class="cname">${esc(m.name)}<span class="kind-badge kind-${m.kind}">${KIND[m.kind]}</span></span>
         ${sub?`<div class="mm-sub">${sub}</div>`:''}
       </div>
-      <button class="move" data-mv="${i}" data-dir="-1" ${i===0?'disabled':''} aria-label="上へ">▲</button>
-      <button class="move" data-mv="${i}" data-dir="1" ${i===l.length-1?'disabled':''} aria-label="下へ">▼</button>
       <button class="edit" data-ed="${i}">編集</button>
     </div>`;
   }).join('')||'<p class="empty">「＋ 追加」から登録してください</p>';
+  if(l.length)makeSortable($('mmList'),async names=>{
+    const a=meta.methods[mmType];
+    meta.methods[mmType]=names.map(n=>a.find(m=>m.name===n)).filter(Boolean);
+    await saveMeta();renderMethods();
+  });
   renderIC();renderBills();
 }
 $('mmList').onclick=async e=>{
-  const mv=e.target.closest('[data-mv]');
-  if(mv){const i=+mv.dataset.mv,j=i+ +mv.dataset.dir,a=meta.methods[mmType];
-    [a[i],a[j]]=[a[j],a[i]];await saveMeta();renderMethods();return}
   const ed=e.target.closest('[data-ed]');
   if(ed)openMethodSheet(methods(mmType)[+ed.dataset.ed]);
 };
@@ -2869,18 +2890,19 @@ $('mgSeg').onclick=e=>{
 function renderManage(){
   const l=cats(mgType);
   $('mgList').innerHTML=l.map((c,i)=>`
-    <div class="mrow">
+    <div class="mrow sort-row" data-sid="${esc(c.name)}">
+      <span class="sort-handle" aria-label="並べ替え">≡</span>
       <span class="icon" style="background:${c.color}1F">${c.icon}</span>
       <span class="cname">${esc(c.name)}${c.subs&&c.subs.length?`<span class="badge">サブ${c.subs.length}</span>`:''}</span>
-      <button class="move" data-mv="${i}" data-dir="-1" ${i===0?'disabled':''} aria-label="上へ">▲</button>
-      <button class="move" data-mv="${i}" data-dir="1" ${i===l.length-1?'disabled':''} aria-label="下へ">▼</button>
       <button class="edit" data-ed="${i}">編集</button>
     </div>`).join('');
+  if(l.length)makeSortable($('mgList'),async names=>{
+    const a=meta.cats[mgType];
+    meta.cats[mgType]=names.map(n=>a.find(c=>c.name===n)).filter(Boolean);
+    await saveMeta();renderManage();await render();
+  });
 }
 $('mgList').onclick=async e=>{
-  const mv=e.target.closest('[data-mv]');
-  if(mv){const i=+mv.dataset.mv,j=i+ +mv.dataset.dir,a=meta.cats[mgType];
-    [a[i],a[j]]=[a[j],a[i]];await saveMeta();renderManage();return}
   const ed=e.target.closest('[data-ed]');
   if(ed)openCatSheet(cats(mgType)[+ed.dataset.ed]);
 };
