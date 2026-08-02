@@ -266,6 +266,14 @@
   .cal-o{font-size:9px;color:var(--red);font-variant-numeric:tabular-nums}
   .cal-i{font-size:9px;color:var(--blue);font-variant-numeric:tabular-nums}
   .cal-daytitle{font-size:12px;color:var(--sub);padding:4px 4px 8px}
+  .sortable .sort-row{display:flex;align-items:center;background:var(--card);position:relative}
+  .sortable .sort-row+.sort-row{border-top:1px solid var(--line)}
+  .sort-handle{flex:none;width:34px;text-align:center;color:var(--sub);font-size:17px;
+    cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;line-height:1}
+  .sort-body{flex:1;min-width:0}
+  .sort-body .item{border-top:none}
+  .sort-row.dragging{z-index:3;box-shadow:0 6px 18px rgba(0,0,0,.16);border-radius:10px;opacity:.97}
+  .sorting{position:relative}
   .fab{position:fixed;right:calc(50% - 260px + 16px);bottom:calc(var(--tabh) + env(safe-area-inset-bottom) + 16px);
     z-index:6;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;background:var(--blue);
     color:#fff;font-size:28px;line-height:1;box-shadow:0 4px 14px rgba(18,121,212,.4)}
@@ -459,10 +467,15 @@
           <div class="field" style="border:none;padding:4px 0"><label for="bookFrom">開始</label><input type="date" id="bookFrom"></div>
           <div class="field" style="padding:4px 0"><label for="bookTo">終了</label><input type="date" id="bookTo"></div>
         </div>
-        <div class="seg" id="expInclSeg" style="margin-bottom:12px">
+        <div class="seg" id="expInclSeg" style="margin-bottom:8px">
           <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
           <button type="button" data-incl="0" aria-pressed="false">経費を除く</button>
         </div>
+        <div class="seg" id="baseSeg" style="margin-bottom:6px">
+          <button type="button" data-base="pay" aria-pressed="true">支払いベース</button>
+          <button type="button" data-base="use" aria-pressed="false">利用ベース</button>
+        </div>
+        <p class="hint" id="baseHint" style="margin:0 2px 12px">実際に財布・口座から出た金額で見ます（電子マネーはチャージ時に計上）。</p>
         <div class="card">
           <p class="card-title">支出の内訳</p>
           <div class="donut-wrap">
@@ -838,7 +851,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v45';
+const APP_VERSION='v47';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -968,6 +981,7 @@ let entryExpense=false;              // 入力中の「経費」トグル状態
 let editStatus=null;                 // 編集中の記録の経費ステータス（新規はnull）
 let bookInclExp=true;               // 家計簿タブ：経費を含むか
 let bookPeriod='month';             // グラフの集計期間：month/year/custom
+let bookBase='pay';                 // 集計の見方：pay=支払いベース / use=利用ベース
 let bookFrom='', bookTo='';         // customの開始・終了(YYYY-MM-DD)
 let expStatusFilter='unclaimed';    // 経費タブの表示状態
 const expSelected=new Set();        // 経費タブで選択中のID
@@ -1114,7 +1128,7 @@ async function render(){
   const y=Y(), k=mkey(cur), d=await year(y);
   $('monthLabel').textContent=y+'年'+(cur.getMonth()+1)+'月';
   const es=d.entries.filter(e=>e.date.slice(0,7)===k)
-    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
 
   // IC払い（チャージ済みの残高から払ったぶん）は二重計上になるので集計に入れない
   const out=es.filter(e=>e.type==='expense'&&!isICPay(e)).reduce((s,e)=>s+total(e),0);
@@ -1126,7 +1140,13 @@ async function render(){
 
   // 家計簿タブの内訳用：期間モード（月/年/期間）で対象を集め、経費を含む/除くで絞る
   const periodEs=await collectBookEntries();
-  const bookEs=periodEs.filter(e=>e.type==='expense'&&!isICPay(e)&&(bookInclExp||!isExp(e)));
+  // 支払いベース：実際に出たお金（チャージを計上、電子マネー払いは除く）
+  // 利用ベース  ：何に使ったか（チャージを除き、電子マネー払いを計上）
+  const bookEs=periodEs.filter(e=>{
+    if(e.type!=='expense')return false;
+    if(!(bookInclExp||!isExp(e)))return false;
+    return bookBase==='use' ? !e.chargeTo : !isICPay(e);
+  });
   const bookOut=bookEs.reduce((s,e)=>s+total(e),0);
 
   const b=d.budgets[k]||0, over=b&&out>b, pct=b?out/b*100:0;
@@ -1159,7 +1179,10 @@ async function render(){
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   $('dTotal').textContent=yen(bookOut);
   const dLabel=$('donut').closest('.donut-wrap').querySelector('.donut-c span');
-  if(dLabel)dLabel.textContent=bookPeriod==='year'?(Y()+'年 支出'):bookPeriod==='custom'?'期間の支出':'支出合計';
+  if(dLabel){
+    const per=bookPeriod==='year'?(Y()+'年'):bookPeriod==='custom'?'期間の':'';
+    dLabel.textContent=bookBase==='use'?(per||'')+'利用額':(per?per+' 支出':'支出合計');
+  }
   drawDonut(rows);
   const posTotalForPct=rows.filter(([,v])=>v>0).reduce((s,[,v])=>s+v,0)||1;
   $('catList').innerHTML=rows.length?rows.map(([c,v])=>{
@@ -1188,7 +1211,7 @@ async function render(){
   }).join(''):'<p class="empty">支出の記録があると内訳が出ます</p>';
 
   // グラフ下の一覧は、グラフと同じ期間の記録を出す（期間指定と食い違わないように）
-  const histEs=[...periodEs].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+  const histEs=[...periodEs].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
   const emptyMsg=bookPeriod==='month'?'この月の記録はまだありません'
     :bookPeriod==='year'?'この年の記録はまだありません':'この期間の記録はありません';
   $('history').innerHTML=histEs.length?groupHTML(histEs):`<div class="card"><p class="empty">${emptyMsg}</p></div>`;
@@ -1222,6 +1245,14 @@ async function render(){
   // 設定の「支払い」を開いたまま記録を足したとき、残高やカード請求も更新する
   if(!$('tab-set').hidden&&!$('setMethodCard').hidden)renderMethods();
   if(!$('tab-set').hidden&&!$('setFixedCard').hidden)renderFixed();
+}
+/* 同じ日の中の並び順。order を持つものは小さい順、無いものは従来どおり新しい順 */
+function sortSameDay(a,b){
+  const ao=a.order, bo=b.order;
+  if(ao!==undefined&&bo!==undefined)return ao-bo;
+  if(ao!==undefined)return -1;
+  if(bo!==undefined)return 1;
+  return b.id-a.id;
 }
 function groupHTML(es){
   const g={};es.forEach(e=>(g[e.date]=g[e.date]||[]).push(e));
@@ -1284,6 +1315,15 @@ $('expInclSeg').onclick=async e=>{
   const b=e.target.closest('button');if(!b)return;
   bookInclExp=b.dataset.incl==='1';
   [...$('expInclSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  await render();
+};
+$('baseSeg').onclick=async e=>{
+  const b=e.target.closest('button');if(!b)return;
+  bookBase=b.dataset.base;
+  [...$('baseSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  $('baseHint').textContent=bookBase==='use'
+    ? '電子マネーで買ったものを含めて、何に使ったかで見ます（チャージ自体は除く）。'
+    : '実際に財布・口座から出た金額で見ます（電子マネーはチャージ時に計上）。';
   await render();
 };
 $('bookPeriodSeg').onclick=async e=>{
@@ -1364,7 +1404,7 @@ async function renderHist(){
   const q=$('histSearch').value.trim().toLowerCase();
   const all=await collectHistEntries();
   const hit=all.filter(e=>entryMatches(e,q))
-    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
   // 合計（支出・収入を分けて）
   const out=hit.filter(e=>e.type==='expense'&&!isICPay(e)).reduce((s,e)=>s+total(e),0);
   const inc=hit.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
@@ -1876,7 +1916,9 @@ $('saveBtn').onclick=async()=>{
       const nd=await year(ny);nd.entries.push({id:editId,...data});await saveYear(ny);
     }else{
       // 経費オフや状態後退で不要になった日付を掃除
+      const dateChanged=old.date!==date;
       Object.assign(old,data);
+      if(dateChanged)delete old.order;   // 別の日に移したら並び順はリセット
       if(!expense){delete old.status;delete old.claimDate;delete old.settleDate}
       else{
         if(status==='unclaimed'){delete old.claimDate;delete old.settleDate}
@@ -1886,7 +1928,12 @@ $('saveBtn').onclick=async()=>{
     }
   }else{
     if(expense)data.status='unclaimed';
-    const nd=await year(ny);nd.entries.push({id:Date.now(),...data});await saveYear(ny);
+    const nd=await year(ny);
+    // 同じ日にすでに順番が付いていれば、その最後に並べる
+    const sameDay=nd.entries.filter(e=>e.date===date&&e.order!==undefined);
+    const ord=sameDay.length?Math.max(...sameDay.map(e=>e.order))+1:undefined;
+    nd.entries.push({id:Date.now(),...data,...(ord!==undefined?{order:ord}:{})});
+    await saveYear(ny);
   }
   cur=new Date(ny,+date.slice(5,7)-1,1);
   closeAll();await render();toast(editId?'変更しました':'保存しました');
@@ -2066,7 +2113,7 @@ async function renderCalDay(){
   const box=$('calDay');
   if(!calSelDay){box.innerHTML='<p class="cal-daytitle" style="text-align:center">日付をタップすると、その日の記録が出ます</p>';return}
   const d=await year(+calSelDay.slice(0,4));
-  const es=d.entries.filter(e=>e.date===calSelDay).sort((a,b)=>b.id-a.id);
+  const es=d.entries.filter(e=>e.date===calSelDay).sort(sortSameDay);
   const dt=new Date(calSelDay+'T00:00:00');
   const W=['日','月','火','水','木','金','土'];
   const o=es.filter(e=>e.type==='expense'&&!isICPay(e)).reduce((s,e)=>s+total(e),0);
@@ -2075,8 +2122,78 @@ async function renderCalDay(){
       <span>${dt.getMonth()+1}月${dt.getDate()}日(${W[dt.getDay()]})</span>
       <span class="num">${o?'支出 '+yen(o):''}${o&&ic?'　':''}${ic?'収入 '+yen(ic):''}</span>
     </div>`+
-    (es.length?`<div class="items">${es.map(itemHTML).join('')}</div>`
+    (es.length?`<div class="items sortable" id="calDayItems">${es.map(e=>
+        `<div class="sort-row" data-sid="${e.id}">
+           <span class="sort-handle" aria-label="並べ替え">≡</span>
+           <span class="sort-body">${itemHTML(e)}</span>
+         </div>`).join('')}</div>`
               :'<div class="card"><p class="empty">この日の記録はありません</p></div>');
+  if(es.length)setupCalDaySort();
+}
+/* カレンダー日別一覧の並べ替え（ハンドルをつまんで上下に動かす）
+   iOSではHTML5のドラッグが使えないのでタッチ操作で実装する */
+function setupCalDaySort(){
+  const wrap=$('calDayItems');if(!wrap)return;
+  let dragEl=null, startY=0, rows=[];
+  const rowsOf=()=>[...wrap.querySelectorAll('.sort-row')];
+  const pointY=ev=>ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY;
+
+  function begin(ev,handle){
+    dragEl=handle.closest('.sort-row');if(!dragEl)return;
+    rows=rowsOf();
+    startY=pointY(ev);
+    dragEl.classList.add('dragging');
+    wrap.classList.add('sorting');
+    ev.preventDefault();
+  }
+  function move(ev){
+    if(!dragEl)return;
+    ev.preventDefault();
+    const offset=pointY(ev)-startY;
+    dragEl.style.transform=`translateY(${offset}px)`;
+    const h=dragEl.offsetHeight;
+    const idx=rows.indexOf(dragEl);
+    // 半分より動いたら隣と入れ替える
+    if(offset<-h/2&&idx>0){
+      wrap.insertBefore(dragEl,rows[idx-1]);
+      rows=rowsOf();startY=pointY(ev);dragEl.style.transform='';
+    }else if(offset>h/2&&idx<rows.length-1){
+      wrap.insertBefore(rows[idx+1],dragEl);
+      rows=rowsOf();startY=pointY(ev);dragEl.style.transform='';
+    }
+  }
+  async function end(){
+    if(!dragEl)return;
+    dragEl.style.transform='';
+    dragEl.classList.remove('dragging');
+    wrap.classList.remove('sorting');
+    dragEl=null;
+    await saveCalDayOrder();
+  }
+  wrap.addEventListener('touchstart',e=>{
+    const h=e.target.closest('.sort-handle');if(h)begin(e,h);
+  },{passive:false});
+  wrap.addEventListener('touchmove',move,{passive:false});
+  wrap.addEventListener('touchend',end);
+  wrap.addEventListener('touchcancel',end);
+  wrap.addEventListener('mousedown',e=>{
+    const h=e.target.closest('.sort-handle');if(h)begin(e,h);
+  });
+  document.addEventListener('mousemove',move);
+  document.addEventListener('mouseup',end);
+}
+/* 表示されている順に order を振り直して保存する */
+async function saveCalDayOrder(){
+  const wrap=$('calDayItems');if(!wrap||!calSelDay)return;
+  const ids=[...wrap.querySelectorAll('.sort-row')].map(r=>+r.dataset.sid);
+  const y=+calSelDay.slice(0,4);
+  const d=await year(y);
+  let changed=false;
+  ids.forEach((id,i)=>{
+    const e=d.entries.find(x=>x.id===id);
+    if(e&&e.order!==i){e.order=i;changed=true}
+  });
+  if(changed){await saveYear(y);await render()}
 }
 $('calGrid').addEventListener('click',e=>{
   const b=e.target.closest('[data-day]');if(!b)return;
@@ -2258,7 +2375,7 @@ function billEntriesOf(all,card,y,m){
     if(e.method!==card.name)return false;
     const dt=new Date(e.date+'T00:00:00');
     return dt>=start&&dt<=end;
-  }).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+  }).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
 }
 async function renderBills(){
   const cards=methods('expense').filter(m=>m.kind==='card');
@@ -2673,7 +2790,7 @@ function icBalance(name,all){
 }
 function icEntriesOf(all,name){
   return all.filter(e=>e.type==='expense'&&(e.chargeTo===name||e.method===name))
-    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.id-a.id);
+    .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
 }
 async function renderIC(){
   const ems=emoneyMethods();
