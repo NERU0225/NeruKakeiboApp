@@ -301,6 +301,11 @@
   .suggest .sg-cat.hit{color:var(--blue)}
   .suggest mark{background:#FFF1B8;color:inherit;border-radius:2px}
   .nm-suggest{margin:2px 0 8px}
+  .route-toggle{display:block;width:100%;text-align:left;padding:10px 2px;font-size:13px}
+  .netbtn{flex:none;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+    color:var(--blue);font-size:12px;padding:6px 10px;cursor:pointer;font-family:var(--font);margin-left:6px}
+  .netbtn:disabled{opacity:.5}
+  .sg-note{font-size:11px;color:var(--sub)}
 
   .lines{margin:6px 0 0}
   .line{background:var(--bg);border-radius:10px;padding:9px 10px;margin-bottom:8px}
@@ -626,6 +631,22 @@
   <div class="field" id="fChargeField" hidden><label for="fChargeTo">チャージ先</label><select id="fChargeTo" style="flex:1"></select></div>
   <p class="hint" id="fChargeHint" hidden style="margin:-4px 0 0">チャージ先を選ぶと、その残高に加算されます。</p>
   <div class="field"><label for="fMemo">メモ</label><input type="text" id="fMemo" placeholder="任意" maxlength="40"></div>
+  <button type="button" class="link route-toggle" id="routeToggle">＋ 区間（乗った場所・降りた場所）</button>
+  <div id="routeWrap" hidden>
+    <div class="field" style="position:relative">
+      <label for="fFrom">出発</label>
+      <input type="text" id="fFrom" placeholder="例：小牧IC" maxlength="30" autocomplete="off">
+      <button type="button" class="netbtn" data-net="from">検索</button>
+    </div>
+    <div class="suggest" id="fromSuggest" hidden></div>
+    <div class="field" style="position:relative">
+      <label for="fTo">到着</label>
+      <input type="text" id="fTo" placeholder="例：名古屋IC" maxlength="30" autocomplete="off">
+      <button type="button" class="netbtn" data-net="to">検索</button>
+    </div>
+    <div class="suggest" id="toSuggest" hidden></div>
+    <p class="hint" id="netHint" style="margin-top:4px">候補は過去の入力から出ます。無いときだけ「検索」でネットから探せます（通信します）。</p>
+  </div>
   <p class="card-title" style="margin:16px 0 0">明細</p>
   <div class="lines" id="lines"></div>
   <button class="addline" id="addLine">＋ 明細を追加</button>
@@ -811,7 +832,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v42';
+const APP_VERSION='v43';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -876,7 +897,7 @@ let cur=new Date(), type='expense', editId=null, lines=[];
 let mgType='expense', csEdit=null, csIcon='📦', csColor='#9AA3AC', csSubs=[];
 const openCats=new Set();
 let calSelDay=null;                  // カレンダーで選択中の日（YYYY-MM-DD）
-let storeIndex=[], nameIndex=[];    // 過去入力の候補
+let storeIndex=[], nameIndex=[], placeIndex=[];    // 過去入力の候補（placeIndexは区間の地点名）
 /* nameIndex の要素：{name, count, amount, qty, category, sub, taxIn, rate, store}
    amount等は「最も新しい記録」の値（直近の金額を使うため） */
 function buildSuggestIndex(){
@@ -899,6 +920,13 @@ function buildSuggestIndex(){
       nc[i.name]=cur;
     });
   });
+  // 区間の地点名（出発・到着を区別せず1つの候補群にする）
+  const pc={};
+  rows.forEach(e=>{
+    if(e.from)pc[e.from]=(pc[e.from]||0)+1;
+    if(e.to)pc[e.to]=(pc[e.to]||0)+1;
+  });
+  placeIndex=Object.entries(pc).sort((a,b)=>b[1]-a[1]).map(([v])=>v);
   storeIndex=Object.entries(sc).sort((a,b)=>b[1]-a[1]).map(([v])=>v);
   nameIndex=Object.values(nc).sort((a,b)=>b.count-a.count);
 }
@@ -1219,7 +1247,7 @@ function itemHTML(e){
     <span class="icon" style="background:${m.color}1F">${m.icon}</span>
     <span class="i-main">
       <span class="i-title">${expBadge}${icBadge}${chBadge}${esc(e.store||uniq[0]||'（店名なし）')}${e.items.length>1?`<span class="badge">${e.items.length}件</span>`:''}</span>
-      <span class="i-sub">${esc(sub)}${e.memo?' ・ '+esc(e.memo):''}</span>
+      <span class="i-sub">${e.from||e.to?esc((e.from||'?')+' → '+(e.to||'?'))+' ・ ':''}${esc(sub)}${e.memo?' ・ '+esc(e.memo):''}</span>
     </span>
     <span class="i-amt num ${e.type==='expense'?'out':'in'}">${e.type==='expense'?'−':'+'}${yen(total(e)).slice(1)}</span>
   </button>`;
@@ -1321,7 +1349,7 @@ async function collectHistEntries(){
 }
 function entryMatches(e,q){
   if(!q)return true;
-  const hay=[e.store,e.memo,...(e.items||[]).map(i=>i.name),
+  const hay=[e.store,e.memo,e.from,e.to,...(e.items||[]).map(i=>i.name),
     ...(e.items||[]).map(i=>i.category),...(e.items||[]).map(i=>i.sub)]
     .filter(Boolean).join(' ').toLowerCase();
   return hay.includes(q);
@@ -1577,6 +1605,13 @@ function openSheet(e,presetDate){
   fillMethodSelect(e?(e.method||''):(methods(type)[0]?methods(type)[0].name:''));
   fillChargeSelect(e?(e.chargeTo||''):'');
   $('fMemo').value=e?(e.memo||''):'';
+  // 区間（あれば開いた状態で表示）
+  $('fFrom').value=e?(e.from||''):'';
+  $('fTo').value=e?(e.to||''):'';
+  const hasRoute=!!(e&&(e.from||e.to));
+  $('routeWrap').hidden=!hasRoute;
+  $('routeToggle').textContent=(hasRoute?'−':'＋')+' 区間（乗った場所・降りた場所）';
+  $('fromSuggest').hidden=true;$('toSuggest').hidden=true;
   $('del').hidden=!e;
   $('saveBtn').textContent=e?'変更を保存':'保存';
   entryExpense=e?!!e.expense:false;
@@ -1604,6 +1639,64 @@ $('storeSuggest').addEventListener('mousedown',e=>e.preventDefault());
 $('storeSuggest').addEventListener('click',e=>{
   const b=e.target.closest('[data-store]');if(!b)return;
   $('fStore').value=b.dataset.store;$('storeSuggest').hidden=true;
+});
+
+/* ---- 区間（出発・到着） ---- */
+$('routeToggle').onclick=()=>{
+  const w=$('routeWrap');
+  w.hidden=!w.hidden;
+  $('routeToggle').textContent=(w.hidden?'＋':'−')+' 区間（乗った場所・降りた場所）';
+};
+function showPlaceSuggest(which){
+  const inp=$(which==='from'?'fFrom':'fTo');
+  const box=$(which==='from'?'fromSuggest':'toSuggest');
+  const q=inp.value, list=matchSuggest(placeIndex,q,'');
+  if(!list.length){box.hidden=true;return}
+  box.innerHTML=list.map(v=>`<button type="button" data-place="${esc(v)}" data-w="${which}">${hilite(v,q)}</button>`).join('');
+  box.hidden=false;
+}
+['from','to'].forEach(w=>{
+  const inp=$(w==='from'?'fFrom':'fTo');
+  const box=$(w==='from'?'fromSuggest':'toSuggest');
+  inp.addEventListener('focus',()=>showPlaceSuggest(w));
+  inp.addEventListener('input',()=>showPlaceSuggest(w));
+  inp.addEventListener('blur',()=>setTimeout(()=>{box.hidden=true},150));
+  box.addEventListener('mousedown',e=>e.preventDefault());
+  box.addEventListener('click',e=>{
+    const b=e.target.closest('[data-place]');if(!b)return;
+    inp.value=b.dataset.place;box.hidden=true;
+  });
+});
+/* ネット検索（ボタンを押した時だけ通信する。起動時は一切通信しない） */
+$('routeWrap').addEventListener('click',async e=>{
+  const btn=e.target.closest('[data-net]');if(!btn)return;
+  const which=btn.dataset.net;
+  const inp=$(which==='from'?'fFrom':'fTo');
+  const box=$(which==='from'?'fromSuggest':'toSuggest');
+  const q=inp.value.trim();
+  if(!q){toast('探したい名前を入れてください');return}
+  btn.disabled=true;btn.textContent='検索中';
+  try{
+    const url='https://nominatim.openstreetmap.org/search?format=json&limit=8&countrycodes=jp&accept-language=ja&q='+encodeURIComponent(q);
+    const res=await fetch(url,{headers:{'Accept':'application/json'}});
+    if(!res.ok)throw new Error('bad response');
+    const list=await res.json();
+    if(!list.length){toast('見つかりませんでした');box.hidden=true;return}
+    box.innerHTML=list.map(r=>{
+      // 「小牧IC, 小牧市, 愛知県, 日本」のような表示から先頭を名前として使う
+      const parts=String(r.display_name||'').split(',').map(s=>s.trim());
+      const nm=parts[0]||q;
+      const note=parts.slice(1,3).join(' ');
+      return `<button type="button" data-place="${esc(nm)}" data-w="${which}">
+        <span class="sg-main">${esc(nm)}<span class="sg-note">${esc(note)}</span></span>
+      </button>`;
+    }).join('');
+    box.hidden=false;
+  }catch(err){
+    toast('検索できませんでした（通信を確認してください）');
+  }finally{
+    btn.disabled=false;btn.textContent='検索';
+  }
 });
 $('fab').onclick=()=>{
   const preset=(!$('tab-cal').hidden&&calSelDay)?calSelDay:null;
@@ -1678,6 +1771,7 @@ function openDetail(en){
     info+=`<div class="dt-row"><span>経費</span>
       <span><span class="stag ${st}">${STATUS[st]}</span>${days.join(' ・ ')}</span></div>`;
   }
+  if(en.from||en.to)info+=`<div class="dt-row"><span>区間</span><span>${esc((en.from||'?')+' → '+(en.to||'?'))}</span></div>`;
   if(en.memo)info+=`<div class="dt-row"><span>メモ</span><span>${esc(en.memo)}</span></div>`;
   $('dtInfo').innerHTML=info;
   open($('detailSheet'));
@@ -1704,6 +1798,8 @@ $('saveBtn').onclick=async()=>{
   // チャージ先（支出のときだけ。自分自身へのチャージは無効）
   const chargeTo=(type==='expense')?($('fChargeTo').value||''):'';
   data.chargeTo=(chargeTo&&chargeTo!==method)?chargeTo:'';
+  data.from=$('fFrom').value.trim();
+  data.to=$('fTo').value.trim();
   const ny=+date.slice(0,4);
   if(editId){
     const oy=await findEntryYear(editId), od=await year(oy);

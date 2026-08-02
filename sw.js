@@ -5,7 +5,7 @@
    - 同時に裏で更新を取りに行き、取れたら次回起動時に反映される
    - 裏の更新は3秒で打ち切る（弱電波でつかみ続けないため）
 */
-const CACHE = 'kakeibo-v42';
+const CACHE = 'kakeibo-v43';
 const REVALIDATE_TIMEOUT = 3000;   // 裏で更新を待つ上限(ms)
 const ASSETS = [
   './',
@@ -45,6 +45,8 @@ function fetchWithTimeout(req, ms) {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || !req.url.startsWith('http')) return;
+  // 自分の配信元以外（地名検索などの外部API）は素通しする。キャッシュもしない。
+  if (new URL(req.url).origin !== self.location.origin) return;
 
   e.respondWith(
     caches.match(req).then(cached => {
