@@ -645,6 +645,12 @@
       <button type="button" class="netbtn" data-net="to">検索</button>
     </div>
     <div class="suggest" id="toSuggest" hidden></div>
+    <div class="seg" id="netKind" style="margin-top:8px">
+      <button type="button" data-nk="all" aria-pressed="true">すべて</button>
+      <button type="button" data-nk="ic" aria-pressed="false">高速IC</button>
+      <button type="button" data-nk="rail" aria-pressed="false">駅</button>
+      <button type="button" data-nk="bus" aria-pressed="false">バス停</button>
+    </div>
     <p class="hint" id="netHint" style="margin-top:4px">候補は過去の入力から出ます。無いときだけ「検索」でネットから探せます（通信します）。</p>
   </div>
   <p class="card-title" style="margin:16px 0 0">明細</p>
@@ -832,7 +838,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v43';
+const APP_VERSION='v44';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -1667,6 +1673,31 @@ function showPlaceSuggest(which){
     inp.value=b.dataset.place;box.hidden=true;
   });
 });
+/* 検索する種別（すべて／高速IC／駅／バス停） */
+let netKind='all';
+$('netKind').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  netKind=b.dataset.nk;
+  [...$('netKind').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+};
+/* 検索結果がその種別に当てはまるか（OSMのclass/typeで判定） */
+function matchNetKind(r,kind){
+  if(kind==='all')return true;
+  const c=r.class||r.category||'', t=r.type||'';
+  if(kind==='ic')
+    return (c==='highway'&&(t==='motorway_junction'||t==='junction'))||
+           (c==='barrier'&&t==='toll_booth');
+  if(kind==='rail')
+    return (c==='railway'&&['station','halt','tram_stop','subway_entrance'].includes(t))||
+           (c==='public_transport'&&['station','stop_position','platform'].includes(t))||
+           (c==='amenity'&&t==='railway_station')||
+           (c==='building'&&t==='train_station');
+  if(kind==='bus')
+    return (c==='highway'&&t==='bus_stop')||
+           (c==='amenity'&&(t==='bus_station'||t==='bus_stop'))||
+           (c==='public_transport'&&['platform','stop_position'].includes(t));
+  return true;
+}
 /* ネット検索（ボタンを押した時だけ通信する。起動時は一切通信しない） */
 $('routeWrap').addEventListener('click',async e=>{
   const btn=e.target.closest('[data-net]');if(!btn)return;
@@ -1677,13 +1708,19 @@ $('routeWrap').addEventListener('click',async e=>{
   if(!q){toast('探したい名前を入れてください');return}
   btn.disabled=true;btn.textContent='検索中';
   try{
-    const url='https://nominatim.openstreetmap.org/search?format=json&limit=8&countrycodes=jp&accept-language=ja&q='+encodeURIComponent(q);
+    // 絞り込む場合は多めに取ってから選別する
+    const lim=netKind==='all'?8:40;
+    const url='https://nominatim.openstreetmap.org/search?format=json&limit='+lim+
+      '&countrycodes=jp&accept-language=ja&q='+encodeURIComponent(q);
     const res=await fetch(url,{headers:{'Accept':'application/json'}});
     if(!res.ok)throw new Error('bad response');
-    const list=await res.json();
+    const raw=await res.json();
+    let list=raw.filter(r=>matchNetKind(r,netKind));
+    let fellBack=false;
+    if(!list.length&&raw.length){list=raw.slice(0,8);fellBack=true}  // 該当なしなら絞らず出す
     if(!list.length){toast('見つかりませんでした');box.hidden=true;return}
+    list=list.slice(0,8);
     box.innerHTML=list.map(r=>{
-      // 「小牧IC, 小牧市, 愛知県, 日本」のような表示から先頭を名前として使う
       const parts=String(r.display_name||'').split(',').map(s=>s.trim());
       const nm=parts[0]||q;
       const note=parts.slice(1,3).join(' ');
@@ -1692,6 +1729,7 @@ $('routeWrap').addEventListener('click',async e=>{
       </button>`;
     }).join('');
     box.hidden=false;
+    if(fellBack)toast('その種別では見つからず、すべてから出しています');
   }catch(err){
     toast('検索できませんでした（通信を確認してください）');
   }finally{
