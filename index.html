@@ -267,6 +267,14 @@
   .cal-i{font-size:9px;color:var(--blue);font-variant-numeric:tabular-nums}
   .cal-daytitle{font-size:12px;color:var(--sub);padding:4px 4px 8px}
   .sort-row{position:relative;background:var(--card)}
+  .filter-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 14px;
+    margin-bottom:12px;cursor:pointer;font-family:var(--font);color:var(--text)}
+  .filter-bar:active{background:var(--bg)}
+  .fb-text{flex:1;min-width:0;font-size:12px;text-align:left;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.01em}
+  .fb-caret{flex:none;color:var(--sub);font-size:11px;transition:transform .15s ease}
+  .fb-caret.open{transform:rotate(180deg)}
   .sortable .sort-row{display:flex;align-items:center}
   .sortable .sort-row+.sort-row{border-top:1px solid var(--line)}
   .sort-handle{flex:none;width:30px;margin-left:-6px;text-align:center;color:#C7CDD4;font-size:17px;
@@ -459,24 +467,30 @@
       </div>
 
       <div id="bookGraph">
-        <div class="seg" id="bookPeriodSeg" style="margin-bottom:10px">
-          <button type="button" data-period="month" aria-pressed="true">月</button>
-          <button type="button" data-period="year" aria-pressed="false">年</button>
-          <button type="button" data-period="custom" aria-pressed="false">期間</button>
+        <button type="button" class="filter-bar" id="filterBar">
+          <span class="fb-text" id="filterText"></span>
+          <span class="fb-caret" id="filterCaret">▾</span>
+        </button>
+        <div id="filterPanel" hidden>
+          <div class="seg" id="bookPeriodSeg" style="margin-bottom:10px">
+            <button type="button" data-period="month" aria-pressed="true">月</button>
+            <button type="button" data-period="year" aria-pressed="false">年</button>
+            <button type="button" data-period="custom" aria-pressed="false">期間</button>
+          </div>
+          <div id="bookCustom" class="card" hidden style="padding:12px 14px">
+            <div class="field" style="border:none;padding:4px 0"><label for="bookFrom">開始</label><input type="date" id="bookFrom"></div>
+            <div class="field" style="padding:4px 0"><label for="bookTo">終了</label><input type="date" id="bookTo"></div>
+          </div>
+          <div class="seg" id="expInclSeg" style="margin-bottom:8px">
+            <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
+            <button type="button" data-incl="0" aria-pressed="false">経費を除く</button>
+          </div>
+          <div class="seg" id="baseSeg" style="margin-bottom:6px">
+            <button type="button" data-base="pay" aria-pressed="true">支払いベース</button>
+            <button type="button" data-base="use" aria-pressed="false">利用ベース</button>
+          </div>
+          <p class="hint" id="baseHint" style="margin:0 2px 12px">実際に財布・口座から出た金額で見ます（電子マネーはチャージ時に計上）。</p>
         </div>
-        <div id="bookCustom" class="card" hidden style="padding:12px 14px">
-          <div class="field" style="border:none;padding:4px 0"><label for="bookFrom">開始</label><input type="date" id="bookFrom"></div>
-          <div class="field" style="padding:4px 0"><label for="bookTo">終了</label><input type="date" id="bookTo"></div>
-        </div>
-        <div class="seg" id="expInclSeg" style="margin-bottom:8px">
-          <button type="button" data-incl="1" aria-pressed="true">経費を含む</button>
-          <button type="button" data-incl="0" aria-pressed="false">経費を除く</button>
-        </div>
-        <div class="seg" id="baseSeg" style="margin-bottom:6px">
-          <button type="button" data-base="pay" aria-pressed="true">支払いベース</button>
-          <button type="button" data-base="use" aria-pressed="false">利用ベース</button>
-        </div>
-        <p class="hint" id="baseHint" style="margin:0 2px 12px">実際に財布・口座から出た金額で見ます（電子マネーはチャージ時に計上）。</p>
         <div class="card">
           <p class="card-title">支出の内訳</p>
           <div class="donut-wrap">
@@ -852,7 +866,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v48';
+const APP_VERSION='v51';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -1179,10 +1193,12 @@ async function render(){
   });
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   $('dTotal').textContent=yen(bookOut);
+  updateFilterBar();
   const dLabel=$('donut').closest('.donut-wrap').querySelector('.donut-c span');
   if(dLabel){
-    const per=bookPeriod==='year'?(Y()+'年'):bookPeriod==='custom'?'期間の':'';
-    dLabel.textContent=bookBase==='use'?(per||'')+'利用額':(per?per+' 支出':'支出合計');
+    const head=bookPeriod==='year'?(Y()+'年'):bookPeriod==='custom'?'期間':'';
+    const kind=bookBase==='use'?'利用額':'支出';
+    dLabel.textContent=head?`${head}の${kind}`:(bookBase==='use'?'利用額':'支出合計');
   }
   drawDonut(rows);
   const posTotalForPct=rows.filter(([,v])=>v>0).reduce((s,[,v])=>s+v,0)||1;
@@ -1317,6 +1333,31 @@ $('expInclSeg').onclick=async e=>{
   bookInclExp=b.dataset.incl==='1';
   [...$('expInclSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
   await render();
+};
+/* 集計の絞り込みバー（普段は畳んで、今の設定だけ1行で見せる） */
+function updateFilterBar(){
+  let per;
+  if(bookPeriod==='month')per=`${Y()}年${cur.getMonth()+1}月`;
+  else if(bookPeriod==='year')per=`${Y()}年`;
+  else if(bookFrom&&bookTo){
+    const md=s=>`${+s.slice(5,7)}/${+s.slice(8,10)}`;
+    const y1=bookFrom.slice(0,4), y2=bookTo.slice(0,4);
+    // 年をまたぐときは両方に年を付けて、いつからいつまでか分かるようにする
+    per=(y1===y2)
+      ? `${y1}/${md(bookFrom)}〜${md(bookTo)}`
+      : `${y1}/${md(bookFrom)}〜${y2}/${md(bookTo)}`;
+  }else per='期間';
+  // 今どの条件で見ているかが常に分かるよう、すべて出す
+  $('filterText').textContent=[
+    per,
+    bookInclExp?'経費を含む':'経費を除く',
+    bookBase==='use'?'利用ベース':'支払いベース'
+  ].join(' ・ ');
+}
+$('filterBar').onclick=()=>{
+  const p=$('filterPanel');
+  p.hidden=!p.hidden;
+  $('filterCaret').classList.toggle('open',!p.hidden);
 };
 $('baseSeg').onclick=async e=>{
   const b=e.target.closest('button');if(!b)return;
