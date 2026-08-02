@@ -866,7 +866,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v51';
+const APP_VERSION='v52';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -1971,9 +1971,13 @@ $('saveBtn').onclick=async()=>{
   }else{
     if(expense)data.status='unclaimed';
     const nd=await year(ny);
-    // 同じ日にすでに順番が付いていれば、その最後に並べる
+    // 同じ日に並び順が付いていれば、新しいものが一番上に来るよう先頭に入れる
     const sameDay=nd.entries.filter(e=>e.date===date&&e.order!==undefined);
-    const ord=sameDay.length?Math.max(...sameDay.map(e=>e.order))+1:undefined;
+    let ord;
+    if(sameDay.length){
+      sameDay.forEach(e=>e.order++);   // 既存を1つずつ後ろへ
+      ord=0;
+    }
     nd.entries.push({id:Date.now(),...data,...(ord!==undefined?{order:ord}:{})});
     await saveYear(ny);
   }
