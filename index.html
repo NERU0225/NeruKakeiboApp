@@ -838,7 +838,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v44';
+const APP_VERSION='v45';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -1698,6 +1698,25 @@ function matchNetKind(r,kind){
            (c==='public_transport'&&['platform','stop_position'].includes(t));
   return true;
 }
+/* 選んだ種別に寄せて検索語を補う
+   「磐田」だけだと市や駅が大量に返ってICが埋もれるため、
+   種別に応じた語を足してから検索する（すでに入っていれば足さない） */
+function netQuery(q,kind){
+  const s=q.trim();
+  if(kind==='ic'){
+    if(/IC|ＩＣ|インター|ジャンクション|JCT|料金所/i.test(s))return s;
+    return s+'IC';
+  }
+  if(kind==='rail'){
+    if(/駅|停留場/.test(s))return s;
+    return s+'駅';
+  }
+  if(kind==='bus'){
+    if(/バス停|停留所/.test(s))return s;
+    return s+' バス停';
+  }
+  return s;
+}
 /* ネット検索（ボタンを押した時だけ通信する。起動時は一切通信しない） */
 $('routeWrap').addEventListener('click',async e=>{
   const btn=e.target.closest('[data-net]');if(!btn)return;
@@ -1708,17 +1727,17 @@ $('routeWrap').addEventListener('click',async e=>{
   if(!q){toast('探したい名前を入れてください');return}
   btn.disabled=true;btn.textContent='検索中';
   try{
-    // 絞り込む場合は多めに取ってから選別する
     const lim=netKind==='all'?8:40;
+    const term=netQuery(q,netKind);
     const url='https://nominatim.openstreetmap.org/search?format=json&limit='+lim+
-      '&countrycodes=jp&accept-language=ja&q='+encodeURIComponent(q);
+      '&countrycodes=jp&accept-language=ja&q='+encodeURIComponent(term);
     const res=await fetch(url,{headers:{'Accept':'application/json'}});
     if(!res.ok)throw new Error('bad response');
     const raw=await res.json();
     let list=raw.filter(r=>matchNetKind(r,netKind));
     let fellBack=false;
-    if(!list.length&&raw.length){list=raw.slice(0,8);fellBack=true}  // 該当なしなら絞らず出す
-    if(!list.length){toast('見つかりませんでした');box.hidden=true;return}
+    if(!list.length&&raw.length){list=raw.slice(0,8);fellBack=true}
+    if(!list.length){toast(`「${term}」では見つかりませんでした`);box.hidden=true;return}
     list=list.slice(0,8);
     box.innerHTML=list.map(r=>{
       const parts=String(r.display_name||'').split(',').map(s=>s.trim());
