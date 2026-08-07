@@ -32,8 +32,10 @@
   header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);
     display:flex;align-items:center;justify-content:center;gap:6px;
     padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
-  .ver{position:absolute;left:14px;bottom:8px;font-size:10px;color:var(--sub);
-    font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .ver{position:absolute;left:8px;bottom:4px;font-size:10px;color:var(--sub);
+    font-variant-numeric:tabular-nums;letter-spacing:.02em;
+    background:none;border:none;padding:6px;cursor:pointer;font-family:var(--font)}
+  .ver:active{opacity:.5}
   header button{background:none;border:none;color:var(--sub);font-size:18px;padding:6px 12px;cursor:pointer;border-radius:8px}
   #monthLabel{font-size:16px;font-weight:600;color:var(--text);min-width:8.5em;text-align:center}
   #monthLabel::after{content:' ▾';color:var(--sub);font-size:11px}
@@ -266,6 +268,21 @@
   .cal-o{font-size:9px;color:var(--red);font-variant-numeric:tabular-nums}
   .cal-i{font-size:9px;color:var(--blue);font-variant-numeric:tabular-nums}
   .cal-daytitle{font-size:12px;color:var(--sub);padding:4px 4px 8px}
+  .ver-group{border-top:1px solid var(--line)}
+  .ver-group:first-child{border-top:none}
+  .ver-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;
+    padding:13px 2px;cursor:pointer;font-family:var(--font);color:inherit;text-align:left}
+  .ver-head:active{background:var(--bg)}
+  .ver-major{flex:none;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+  .ver-when{flex:1;min-width:0;font-size:11px;color:var(--sub)}
+  .ver-caret{flex:none;color:var(--sub);font-size:11px;transition:transform .15s ease}
+  .ver-caret.open{transform:rotate(180deg)}
+  .ver-body{padding:0 0 8px 4px}
+  .ver-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+  .ver-row:first-child{border-top:none}
+  .ver-tag{flex:none;width:3.2em;font-size:11px;font-weight:600;color:var(--blue);
+    font-variant-numeric:tabular-nums;padding-top:1px}
+  .ver-text{flex:1;min-width:0;font-size:13px;line-height:1.5}
   .sort-row{position:relative;background:var(--card)}
   .filter-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
     background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 14px;
@@ -404,7 +421,7 @@
     <button class="bb-later" id="backupLater" aria-label="あとで">✕</button>
   </div>
   <header>
-    <span class="ver" id="verLabel"></span>
+    <button class="ver" id="verLabel" aria-label="バージョン履歴"></button>
     <button id="prev" aria-label="前の月">‹</button>
     <button id="monthLabel" class="num">—</button>
     <button id="next" aria-label="次の月">›</button>
@@ -763,6 +780,17 @@
   <div id="cardHistList"></div>
 </div>
 
+<div class="sheet sheet-tall" id="verSheet" role="dialog" aria-modal="true" aria-label="バージョン履歴">
+  <div class="grab"></div>
+  <div class="dt-head">
+    <div>
+      <h3 style="margin:0">バージョン履歴</h3>
+      <p class="hint" id="verNow" style="margin:2px 0 0"></p>
+    </div>
+  </div>
+  <div id="verList" style="margin-top:12px"></div>
+</div>
+
 <div class="sheet sheet-tall" id="icHistSheet" role="dialog" aria-modal="true" aria-label="ICカードの履歴">
   <div class="grab"></div>
   <h3 id="icHistTitle">ICカード</h3>
@@ -878,7 +906,41 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v1.1';
+const APP_VERSION='v1.5';
+/* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
+/* バージョン履歴
+   整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
+   released は導入日。未導入のものは空にすると「検証中」と表示される。
+   改修したら、いちばん上の版の items の先頭に1行足す。
+   「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
+const CHANGELOG=[
+  {ver:'v2', released:'', items:[
+    ['v1.5','バージョン履歴を、導入した版ごとにまとめて表示するように'],
+    ['v1.4','バージョン表示をタップで履歴を開けるように'],
+    ['v1.3','バージョン履歴を追加'],
+    ['v1.2','更新が反映されないことがある不具合を修正。新しい版に自動で切り替わるように'],
+    ['v1.1','固定費で「毎月 第◯曜日」を指定できるように（宝くじなど）'],
+  ]},
+  {ver:'v1', released:'2026-08-02', items:[
+    ['','バージョン管理の運用を開始。ここまでの機能をまとめて v1 とした'],
+    ['','同じ日の中の並び順を、つまんで入れ替えられるように'],
+    ['','集計を「支払いベース／利用ベース」で切り替えられるように'],
+    ['','区間（乗った場所・降りた場所）の記録と地名検索'],
+    ['','電子マネーのチャージと残高管理。二重計上を避ける集計'],
+    ['','固定費（家賃・保険・サブスク）の登録と自動記録'],
+    ['','記録の参照画面を追加。編集と分離'],
+    ['','支払い方法・収入経路の管理、カード請求と利用履歴'],
+    ['','消費税（税込・税抜、税率ごとの計算）と値引きの入力'],
+    ['','集計タブに履歴と横断検索。店名ごとの合計'],
+    ['','カレンダー表示。日別の収支と、その日の一覧'],
+    ['','経費（立替）の管理。申請日・精算日の記録'],
+    ['','バックアップの案内と、年ごとの書き出し・読み込み'],
+    ['','入力候補（店名・品名）の表示'],
+    ['','予算（月の総額とカテゴリ別）'],
+    ['','カテゴリの追加・並べ替え、サブカテゴリ'],
+    ['','家計簿の基本機能（収支の入力、集計、オフライン対応）'],
+  ]},
+];
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -906,15 +968,20 @@ const defaultRate=()=>meta.defaultRate!==undefined?meta.defaultRate:10;
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   addEventListener('load',()=>{
     navigator.serviceWorker.register('./sw.js').then(reg=>{
-      // 新しい版が用意できたら知らせる（反映は次に開いた時）
       reg.addEventListener('updatefound',()=>{
         const nw=reg.installing;if(!nw)return;
         nw.addEventListener('statechange',()=>{
           if(nw.state==='installed'&&navigator.serviceWorker.controller)
-            setTimeout(()=>{try{toast('新しい版があります。次に開くと切り替わります')}catch(e){}},1200);
+            setTimeout(()=>{try{toast('新しい版に切り替えています…')}catch(e){}},600);
         });
       });
     }).catch(()=>{});
+    // 新しいSWが有効になったら、その場で読み込み直して新版にする
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(reloaded)return;reloaded=true;
+      location.reload();
+    });
   });
 }
 
@@ -3090,6 +3157,36 @@ $('csDel').onclick=async()=>{
 };
 
 /* ============ バックアップ ============ */
+/* バージョン履歴 */
+let verOpen=null;                 // 開いている版。null なら先頭を開く
+function renderChangelog(){
+  $('verNow').textContent='いま '+APP_VERSION;
+  if(verOpen===null&&CHANGELOG[0])verOpen=CHANGELOG[0].ver;
+  $('verList').innerHTML=CHANGELOG.map(g=>{
+    const testing=!g.released;    // released が空なら、まだ導入していない＝検証中
+    const open=verOpen===g.ver;
+    const when=testing?'検証中':`${+g.released.slice(5,7)}/${+g.released.slice(8,10)} 導入`;
+    const body=open?`<div class="ver-body">${g.items.map(([v,t])=>
+      `<div class="ver-row">
+         <span class="ver-tag">${v?esc(v):''}</span>
+         <span class="ver-text">${esc(t)}</span>
+       </div>`).join('')}</div>`:'';
+    return `<div class="ver-group">
+      <button type="button" class="ver-head" data-ver="${esc(g.ver)}">
+        <span class="ver-major">${esc(g.ver)}</span>
+        <span class="ver-when">${esc(when)}</span>
+        <span class="ver-caret ${open?'open':''}">▾</span>
+      </button>
+      ${body}
+    </div>`;
+  }).join('');
+}
+$('verList').onclick=e=>{
+  const b=e.target.closest('[data-ver]');if(!b)return;
+  verOpen=(verOpen===b.dataset.ver)?'':b.dataset.ver;   // 同じものを押したら閉じる
+  renderChangelog();
+};
+$('verLabel').onclick=()=>{renderChangelog();open($('verSheet'))};
 function renderYears(){
   const ys=[...new Set([...meta.years,Y(),new Date().getFullYear()])].sort();
   const sel=$('yearSel'), keep=sel.value;

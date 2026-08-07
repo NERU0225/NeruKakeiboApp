@@ -4,8 +4,11 @@
    - キャッシュがあれば通信を待たずに即返す（電波が弱くても起動が遅くならない）
    - 同時に裏で更新を取りに行き、取れたら次回起動時に反映される
    - 裏の更新は3秒で打ち切る（弱電波でつかみ続けないため）
+
+   バージョンを上げたら、必ず新しい内容を取り直すこと。
+   ブラウザのHTTPキャッシュから古いファイルを拾わないよう cache:'reload' を使う。
 */
-const CACHE = 'kakeibo-v1.1';
+const CACHE = 'kakeibo-v1.5';
 const REVALIDATE_TIMEOUT = 3000;   // 裏で更新を待つ上限(ms)
 const ASSETS = [
   './',
@@ -19,7 +22,14 @@ const ASSETS = [
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(ASSETS))
+      // cache:'reload' でネットワークから確実に最新を取る
+      .then(c => Promise.all(
+        ASSETS.map(u =>
+          fetch(new Request(u, { cache: 'reload' }))
+            .then(res => res && res.ok ? c.put(u, res) : null)
+            .catch(() => null)
+        )
+      ))
       .then(() => self.skipWaiting())
       .catch(() => {})
   );
@@ -48,24 +58,23 @@ self.addEventListener('fetch', e => {
   // 自分の配信元以外（地名検索などの外部API）は素通しする。キャッシュもしない。
   if (new URL(req.url).origin !== self.location.origin) return;
 
-  e.respondWith(
-    caches.match(req).then(cached => {
-      // 裏で更新を取りに行く（結果は次回に使う）
-      const revalidate = fetchWithTimeout(req, REVALIDATE_TIMEOUT)
-        .then(res => {
-          if (res && res.status === 200) {
-            const copy = res.clone();
-            caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => null);
+  e.respondWith((async () => {
+    // 今の版のキャッシュだけを見る（古い版のキャッシュを拾わないため）
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
 
-      // キャッシュがあれば通信を待たずに即返す
-      if (cached) return cached;
+    // 裏で更新を取りに行く（結果は次回に使う）
+    const revalidate = fetchWithTimeout(req, REVALIDATE_TIMEOUT)
+      .then(res => {
+        if (res && res.status === 200) cache.put(req, res.clone()).catch(() => {});
+        return res;
+      })
+      .catch(() => null);
 
-      // 初回など、キャッシュが無い時だけ通信の結果を待つ
-      return revalidate.then(res => res || caches.match('./index.html'));
-    })
-  );
+    // キャッシュがあれば通信を待たずに即返す
+    if (cached) return cached;
+
+    // 初回など、キャッシュが無い時だけ通信の結果を待つ
+    return (await revalidate) || (await cache.match('./index.html'));
+  })());
 });
