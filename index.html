@@ -906,7 +906,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v3.1';
+const APP_VERSION='v3.2';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -915,6 +915,7 @@ const APP_VERSION='v3.1';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v4', released:'', items:[
+    ['v3.2','更新の通知が出ないことがあるのを修正'],
     ['v3.1','更新が完了したときに知らせるように'],
   ]},
   {ver:'v3', released:'2026-08-07', items:[
@@ -972,6 +973,14 @@ const defaultRate=()=>meta.defaultRate!==undefined?meta.defaultRate:10;
 
 /* ============ Service Worker（オフライン起動） ============ */
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  // 切り替えの検知は取りこぼすと通知が出ないので、load を待たず先に登録する
+  let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(reloaded)return;reloaded=true;
+    // 読み込み直すと画面が初期化されるので、印を残して起動後に知らせる
+    try{localStorage.setItem('kakeibo:justUpdated','1')}catch(e){}
+    location.reload();
+  });
   addEventListener('load',()=>{
     navigator.serviceWorker.register('./sw.js').then(reg=>{
       reg.addEventListener('updatefound',()=>{
@@ -982,14 +991,6 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){
         });
       });
     }).catch(()=>{});
-    // 新しいSWが有効になったら、その場で読み込み直して新版にする。
-    // 読み込み直すとメッセージが消えるので、印を残して起動後に知らせる。
-    let reloaded=false;
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{
-      if(reloaded)return;reloaded=true;
-      try{sessionStorage.setItem('kakeibo:justUpdated','1')}catch(e){}
-      location.reload();
-    });
   });
 }
 
@@ -3365,12 +3366,15 @@ $('wipe').onclick=async()=>{
   await render();
   if(made)toast(`固定費を${made}件記録しました`);
   await updateBackupBar();
-  // 直前に新しい版へ切り替えたなら、それを知らせる
+  // 更新を知らせる。前回起動時のバージョンと違っていれば、切り替わったと判断する
+  // （切り替えの検知を取りこぼしても、これで確実に出る）
   try{
-    if(sessionStorage.getItem('kakeibo:justUpdated')){
-      sessionStorage.removeItem('kakeibo:justUpdated');
-      setTimeout(()=>toast(`${APP_VERSION} に更新しました`),400);
-    }
+    const prev=localStorage.getItem('kakeibo:lastVersion');
+    const flagged=localStorage.getItem('kakeibo:justUpdated');
+    localStorage.removeItem('kakeibo:justUpdated');
+    localStorage.setItem('kakeibo:lastVersion',APP_VERSION);
+    if(prev&&prev!==APP_VERSION)setTimeout(()=>toast(`${APP_VERSION} に更新しました`),500);
+    else if(flagged&&!prev)setTimeout(()=>toast(`${APP_VERSION} に更新しました`),500);
   }catch(e){}
 })();
 </script>
