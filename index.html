@@ -906,7 +906,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v1.5';
+const APP_VERSION='v3';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -914,7 +914,12 @@ const APP_VERSION='v1.5';
    改修したら、いちばん上の版の items の先頭に1行足す。
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
-  {ver:'v2', released:'', items:[
+  {ver:'v4', released:'', items:[
+  ]},
+  {ver:'v3', released:'2026-08-07', items:[
+    ['v2.1','中身が無いバージョンは履歴に表示しないように'],
+  ]},
+  {ver:'v2', released:'2026-08-07', items:[
     ['v1.5','バージョン履歴を、導入した版ごとにまとめて表示するように'],
     ['v1.4','バージョン表示をタップで履歴を開けるように'],
     ['v1.3','バージョン履歴を追加'],
@@ -3161,8 +3166,10 @@ $('csDel').onclick=async()=>{
 let verOpen=null;                 // 開いている版。null なら先頭を開く
 function renderChangelog(){
   $('verNow').textContent='いま '+APP_VERSION;
-  if(verOpen===null&&CHANGELOG[0])verOpen=CHANGELOG[0].ver;
-  $('verList').innerHTML=CHANGELOG.map(g=>{
+  // 中身が無い版（次の検証枠など）は表示しない
+  const list=CHANGELOG.filter(g=>g.items&&g.items.length);
+  if(verOpen===null&&list[0])verOpen=list[0].ver;
+  $('verList').innerHTML=list.map(g=>{
     const testing=!g.released;    // released が空なら、まだ導入していない＝検証中
     const open=verOpen===g.ver;
     const when=testing?'検証中':`${+g.released.slice(5,7)}/${+g.released.slice(8,10)} 導入`;
