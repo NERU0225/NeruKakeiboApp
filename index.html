@@ -807,8 +807,20 @@
   </div>
   <div class="field" id="fxDowField" hidden><label for="fxDow">曜日</label><select id="fxDow" style="flex:1"></select></div>
   <div class="field" id="fxMonthField" hidden><label for="fxMonth">月</label><select id="fxMonth" style="flex:1"></select></div>
+  <div id="fxMonthMode" hidden>
+    <div class="seg" id="fxBySeg" style="margin-bottom:8px">
+      <button type="button" data-by="day" aria-pressed="true">日にちで</button>
+      <button type="button" data-by="dow" aria-pressed="false">第◯曜日で</button>
+    </div>
+  </div>
   <div class="field" id="fxDayField"><label for="fxDay">日</label><select id="fxDay" style="flex:1"></select></div>
+  <div class="field" id="fxNthField" hidden>
+    <label for="fxNth">週</label>
+    <select id="fxNth" style="flex:1"></select>
+    <select id="fxNthDow" style="flex:1;margin-left:6px"></select>
+  </div>
   <p class="hint" id="fxDayHint" style="margin-top:4px">31日を選ぶと、31日がない月は末日に記録します。</p>
+  <p class="hint" id="fxNthHint" hidden style="margin-top:4px">その週の曜日がない月（第5週など）は、その月は記録しません。</p>
 
   <p class="card-title" style="margin:16px 0 6px">期間</p>
   <div class="field"><label for="fxStart">開始日</label><input type="date" id="fxStart"></div>
@@ -866,7 +878,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v1';
+const APP_VERSION='v1.1';
 const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
@@ -2515,12 +2527,16 @@ async function openCardHistory(cardName,y,m){
 /* ============ 固定費 ============ */
 const fixedList=()=>meta.fixed||(meta.fixed=[]);
 const DOW=['日','月','火','水','木','金','土'];
-let fxEdit=null, fxFreq='month', fxAmounts=[], fxPays=[], fxNoEnd=true;
+let fxEdit=null, fxFreq='month', fxBy='day', fxAmounts=[], fxPays=[], fxNoEnd=true;
 
 /* 周期の説明文 */
 function fixedFreqText(f){
   if(f.freq==='week')return `毎週${DOW[f.dow||0]}曜日`;
   if(f.freq==='year')return `毎年${f.month||1}月${f.day||1}日`;
+  if(f.by==='dow'){
+    const nth=f.nth===-1?'最終':`第${f.nth||1}`;
+    return `毎月${nth}${DOW[f.nthDow||0]}曜日`;
+  }
   return `毎月${f.day||1}日`;
 }
 /* その日に適用される金額を返す */
@@ -2568,14 +2584,37 @@ function fixedOccurrences(f,until){
   }else{
     let y=sy,m=sm,guard=0;
     while(guard++<1200){
-      const day=Math.min(f.day||1,lastDay(y,m));
-      const s=iso(y,m,day);
-      if(s>last)break;
-      if(s>=start)out.push(s);
+      let s=null;
+      if(f.by==='dow'){
+        // 第◯曜日（-1は最終週）。その週の曜日が無い月は記録しない
+        const d=nthDowDate(y,m,f.nth||1,f.nthDow||0);
+        if(d)s=iso(y,m,d);
+      }else{
+        s=iso(y,m,Math.min(f.day||1,lastDay(y,m)));
+      }
+      if(s){
+        if(s>last)break;
+        if(s>=start)out.push(s);
+      }else{
+        // その月に該当日が無い場合も、期間の終わりは見張る
+        if(iso(y,m,lastDay(y,m))>last)break;
+      }
       m++;if(m>11){m=0;y++}
     }
   }
   return out;
+}
+/* y年m月の「第n ◯曜日」の日を返す。無ければ null。n=-1 は最終週 */
+function nthDowDate(y,m,n,dow){
+  const len=lastDay(y,m);
+  if(n===-1){
+    for(let d=len;d>=1;d--)if(new Date(y,m,d).getDay()===dow)return d;
+    return null;
+  }
+  const first=new Date(y,m,1).getDay();
+  const shift=(dow-first+7)%7;
+  const d=1+shift+(n-1)*7;
+  return d<=len?d:null;
 }
 /* 固定費から記録を自動生成する（重複は作らない） */
 /* 設定を変えたとき、今の設定では作られないはずの自動生成記録を消す
@@ -2669,6 +2708,12 @@ function openFixedSheet(f){
   $('fxMonth').innerHTML=Array.from({length:12},(_,i)=>`<option value="${i+1}" ${f&&f.month===i+1?'selected':''}>${i+1}月</option>`).join('');
   $('fxDay').innerHTML=Array.from({length:31},(_,i)=>`<option value="${i+1}" ${f&&f.day===i+1?'selected':''}>${i+1}日</option>`).join('');
   if(!f)$('fxDay').value=String(new Date().getDate());
+  // 日にちで／第◯曜日で
+  fxBy=(f&&f.by==='dow')?'dow':'day';
+  [...$('fxBySeg').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.by===fxBy));
+  const NTH=[[1,'第1'],[2,'第2'],[3,'第3'],[4,'第4'],[5,'第5'],[-1,'最終']];
+  $('fxNth').innerHTML=NTH.map(([v,l])=>`<option value="${v}" ${f&&f.nth===v?'selected':''}>${l}</option>`).join('');
+  $('fxNthDow').innerHTML=DOW.map((w,i)=>`<option value="${i}" ${f&&f.nthDow===i?'selected':''}>${w}曜日</option>`).join('');
   fxSyncFreq();
   // 期間
   $('fxStart').value=f?f.start:today();
@@ -2690,11 +2735,21 @@ function fxSyncSub(cur){
 }
 $('fxCat').onchange=()=>fxSyncSub('');
 function fxSyncFreq(){
+  const byDow=(fxFreq==='month'&&fxBy==='dow');
   $('fxDowField').hidden=fxFreq!=='week';
   $('fxMonthField').hidden=fxFreq!=='year';
-  $('fxDayField').hidden=fxFreq==='week';
-  $('fxDayHint').hidden=fxFreq==='week';
+  $('fxMonthMode').hidden=fxFreq!=='month';      // 日にち/第◯曜日 の切替は毎月のみ
+  $('fxDayField').hidden=(fxFreq==='week')||byDow;
+  $('fxDayHint').hidden=(fxFreq==='week')||byDow;
+  $('fxNthField').hidden=!byDow;
+  $('fxNthHint').hidden=!byDow;
 }
+$('fxBySeg').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  fxBy=b.dataset.by;
+  [...$('fxBySeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  fxSyncFreq();
+};
 $('fxFreq').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;
   fxFreq=b.dataset.freq;
@@ -2797,7 +2852,10 @@ $('fxSave').onclick=async()=>{
     payments,freq:fxFreq,
     dow:fxFreq==='week'?+$('fxDow').value:undefined,
     month:fxFreq==='year'?+$('fxMonth').value:undefined,
-    day:fxFreq==='week'?undefined:+$('fxDay').value,
+    by:fxFreq==='month'?fxBy:undefined,
+    nth:(fxFreq==='month'&&fxBy==='dow')?+$('fxNth').value:undefined,
+    nthDow:(fxFreq==='month'&&fxBy==='dow')?+$('fxNthDow').value:undefined,
+    day:(fxFreq==='week'||(fxFreq==='month'&&fxBy==='dow'))?undefined:+$('fxDay').value,
     start,end,amounts
   };
   const l=fixedList();
