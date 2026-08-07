@@ -906,7 +906,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v3';
+const APP_VERSION='v3.1';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -915,6 +915,7 @@ const APP_VERSION='v3';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v4', released:'', items:[
+    ['v3.1','更新が完了したときに知らせるように'],
   ]},
   {ver:'v3', released:'2026-08-07', items:[
     ['v2.1','中身が無いバージョンは履歴に表示しないように'],
@@ -981,10 +982,12 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){
         });
       });
     }).catch(()=>{});
-    // 新しいSWが有効になったら、その場で読み込み直して新版にする
+    // 新しいSWが有効になったら、その場で読み込み直して新版にする。
+    // 読み込み直すとメッセージが消えるので、印を残して起動後に知らせる。
     let reloaded=false;
     navigator.serviceWorker.addEventListener('controllerchange',()=>{
       if(reloaded)return;reloaded=true;
+      try{sessionStorage.setItem('kakeibo:justUpdated','1')}catch(e){}
       location.reload();
     });
   });
@@ -3362,6 +3365,13 @@ $('wipe').onclick=async()=>{
   await render();
   if(made)toast(`固定費を${made}件記録しました`);
   await updateBackupBar();
+  // 直前に新しい版へ切り替えたなら、それを知らせる
+  try{
+    if(sessionStorage.getItem('kakeibo:justUpdated')){
+      sessionStorage.removeItem('kakeibo:justUpdated');
+      setTimeout(()=>toast(`${APP_VERSION} に更新しました`),400);
+    }
+  }catch(e){}
 })();
 </script>
 </body>
