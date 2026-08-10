@@ -133,6 +133,10 @@
   .kind-card{background:#8B6FD4}
   .kind-emoney{background:#E5943B}
   .mrow .mm-sub{font-size:11px;color:var(--sub);margin-top:2px}
+  .mm-group{font-size:11px;color:var(--sub);font-weight:600;padding:14px 0 4px;
+    border-top:1px solid var(--line);margin-top:6px;display:flex;align-items:baseline;gap:8px}
+  .mm-group:first-child{border-top:none;margin-top:0;padding-top:2px}
+  .mm-note{font-weight:400;font-size:10px}
   .bill{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
   .bill-row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
   .bill-tap{width:100%;background:none;border-top:1px solid var(--line);text-align:left;cursor:pointer;font-family:var(--font);color:inherit}
@@ -587,7 +591,8 @@
     <section id="tab-set" hidden>
       <div class="seg" id="setNav" style="margin-bottom:12px">
         <button type="button" data-set="cat" aria-pressed="true">カテゴリ</button>
-        <button type="button" data-set="method" aria-pressed="false">支払い</button>
+        <button type="button" data-set="money" aria-pressed="false">お金</button>
+        <button type="button" data-set="method" aria-pressed="false">カード</button>
         <button type="button" data-set="fixed" aria-pressed="false">固定費</button>
         <button type="button" data-set="tax" aria-pressed="false">税率</button>
       </div>
@@ -602,15 +607,19 @@
         <button class="addcat" id="addCat">＋ カテゴリを追加</button>
       </div>
 
+      <div class="card" id="setMoneyCard" hidden>
+        <p class="card-title">お金の置き場所</p>
+        <p class="hint" style="margin-bottom:12px">現金・銀行口座・電子マネーなど、お金がある場所を登録します。支払いにも収入にも使えます。</p>
+        <div id="moneyList"></div>
+        <button class="addcat" id="addMoney">＋ 追加</button>
+        <div id="icView"></div>
+      </div>
+
       <div class="card" id="setMethodCard" hidden>
-        <p class="card-title">支払い方法・収入経路</p>
-        <div class="seg" id="mmSeg">
-          <button type="button" data-type="expense" aria-pressed="true">支払い方法</button>
-          <button type="button" data-type="income" aria-pressed="false">収入経路</button>
-        </div>
+        <p class="card-title">カード</p>
+        <p class="hint" style="margin-bottom:12px">クレジットカードなど、使った分が後から口座で引き落とされるものです。残高は持ちません。</p>
         <div id="mmList"></div>
         <button class="addcat" id="addMethod">＋ 追加</button>
-        <div id="icView"></div>
         <div id="billView"></div>
       </div>
 
@@ -757,7 +766,7 @@
   <div id="mtKindWrap">
     <p class="hint" style="margin:14px 0 6px">種別</p>
     <div class="seg" id="mtKind"></div>
-    <p class="hint" id="mtEmoneyHint" hidden style="margin-top:8px">先にチャージして使うもの（Suica・PayPay残高など）に選んでください。残高を計算し、この方法で払った分は集計に入れません（チャージした時点で計上済みのため）。<b>あと払い・iD・QUICPayなど後払いのもの</b>は「カード」か「口座」で登録してください。</p>
+    <p class="hint" id="mtKindHint" style="margin-top:8px"></p>
   </div>
   <div id="mtCardWrap" hidden>
     <div class="field"><label for="mtClosing">締め日</label>
@@ -913,7 +922,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v4.2';
+const APP_VERSION='v4.4';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -922,6 +931,8 @@ const APP_VERSION='v4.2';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v5', released:'', items:[
+    ['v4.4','設定を「お金」と「カード」に分離。お金の置き場所は支払いと収入で共通に'],
+    ['v4.3','「お金の置き場所」と「カード」を分けて表示。種別ごとの説明を追加'],
     ['v4.2','口座を登録してもホームに残高が出ない不具合を修正'],
     ['v4.1','カード請求を「これから引き落とし／済み」で表示。口座・現金の残高管理と、口座間の移動に対応'],
   ]},
@@ -976,9 +987,35 @@ const DEFAULT_METHODS={
   expense:[{name:'現金',kind:'cash'}],
   income:[{name:'現金',kind:'cash'}]
 };
-const methods=t=>(meta.methods&&meta.methods[t])||[];
+/* お金の置き場所（現金・口座・電子マネー）は支払いと収入で共通。
+   カードは支払いのときだけ使う。
+   meta.methods = { money:[...], card:[...] } */
+const moneyList=()=>(meta.methods&&meta.methods.money)||[];
+const cardList=()=>(meta.methods&&meta.methods.card)||[];
+/* 用途に応じた選択肢。収入にカードは出さない */
+const methods=t=>t==='income'?moneyList():[...moneyList(),...cardList()];
 const methodByName=(t,n)=>methods(t).find(m=>m.name===n)||null;
-function seedMethods(){meta.methods={expense:DEFAULT_METHODS.expense.map(m=>({...m})),income:DEFAULT_METHODS.income.map(m=>({...m}))}}
+function seedMethods(){meta.methods={money:[{name:'現金',kind:'cash'}],card:[]}}
+/* 旧構造（expense/income に分かれていた）を money/card にまとめる。
+   同じ名前のものは1つにする（支払い用と収入用で二重登録されていたケース） */
+function migrateMethods(){
+  const m=meta.methods;
+  if(!m||m.money)return false;                 // 既に新しい構造
+  const money=[], card=[], seen=new Set();
+  const push=(x)=>{
+    if(!x||!x.name||seen.has(x.name))return;
+    seen.add(x.name);
+    if(x.kind==='card')card.push({...x});else money.push({...x});
+  };
+  (m.expense||[]).forEach(push);
+  (m.income||[]).forEach(x=>{
+    // 収入側は現金/口座/電子マネーのみ。同名が既にあれば統合される
+    push({...x,kind:['cash','bank','emoney'].includes(x.kind)?x.kind:'bank'});
+  });
+  if(!money.length)money.push({name:'現金',kind:'cash'});
+  meta.methods={money,card};
+  return true;
+}
 const DEFAULT_RATES=[8,10];
 const rates=()=>(meta.rates&&meta.rates.length?meta.rates:DEFAULT_RATES);
 const defaultRate=()=>meta.defaultRate!==undefined?meta.defaultRate:10;
@@ -1360,6 +1397,7 @@ async function render(){
   await renderHomeBills();
   await renderHomeIC();
   // 設定の「支払い」を開いたまま記録を足したとき、残高やカード請求も更新する
+  if(!$('tab-set').hidden&&!$('setMoneyCard').hidden)renderMoney();
   if(!$('tab-set').hidden&&!$('setMethodCard').hidden)renderMethods();
   if(!$('tab-set').hidden&&!$('setFixedCard').hidden)renderFixed();
 }
@@ -1417,6 +1455,7 @@ function showTab(n){
   if(n==='expense'){expSelected.clear();renderExpense()}
   if(n==='cal')renderCalendar();
   if(n==='set'){                       // 開いていたカードを最新に描き直す
+    if(!$('setMoneyCard').hidden)renderMoney();
     if(!$('setMethodCard').hidden)renderMethods();
     if(!$('setFixedCard').hidden)renderFixed();
     if(!$('setTaxCard').hidden)renderRates();
@@ -1754,9 +1793,16 @@ $('typeSeg').onclick=e=>{
 };
 function fillMethodSelect(sel){
   const ms=methods(type);
-  $('fMethod').innerHTML=ms.length
-    ? ms.map(m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`).join('')
-    : '<option value="">（未登録）</option>';
+  if(!ms.length){$('fMethod').innerHTML='<option value="">（未登録）</option>';return}
+  const opt=m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`;
+  // お金の置き場所とカードを分けて並べる
+  const box=ms.filter(m=>BAL_KINDS.includes(m.kind));
+  const cards=ms.filter(m=>m.kind==='card');
+  const other=ms.filter(m=>!BAL_KINDS.includes(m.kind)&&m.kind!=='card');
+  $('fMethod').innerHTML=
+    (box.length?`<optgroup label="お金の置き場所">${box.map(opt).join('')}</optgroup>`:'')
+    +(cards.length?`<optgroup label="カード">${cards.map(opt).join('')}</optgroup>`:'')
+    +other.map(opt).join('');
 }
 function fillChargeSelect(sel){
   const cur=$('fMethod').value;
@@ -1769,7 +1815,9 @@ function fillChargeSelect(sel){
   $('fChargeHint').hidden=!show;
   if(!show){$('fChargeTo').innerHTML='<option value=""></option>';return}
   $('fChargeTo').innerHTML='<option value="">（移動ではない）</option>'+
-    dest.map(m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`).join('');
+    `<optgroup label="お金の置き場所">`+
+    dest.map(m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`).join('')+
+    `</optgroup>`;
 }
 $('fMethod').onchange=()=>fillChargeSelect($('fChargeTo').value);
 function syncExpToggle(){
@@ -2376,9 +2424,11 @@ $('setNav').onclick=e=>{
   const v=b.dataset.set;
   [...$('setNav').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
   $('setCatCard').hidden=v!=='cat';
+  $('setMoneyCard').hidden=v!=='money';
   $('setMethodCard').hidden=v!=='method';
   $('setFixedCard').hidden=v!=='fixed';
   $('setTaxCard').hidden=v!=='tax';
+  if(v==='money')renderMoney();
   if(v==='method')renderMethods();
   if(v==='fixed')renderFixed();
   if(v==='tax')renderRates();
@@ -2417,17 +2467,17 @@ $('rateAdd').onclick=async()=>{
 };
 
 /* ============ 支払い方法・収入経路 ============ */
-let mmType='expense', mtEdit=null, mtKind='cash';
+let mtEdit=null, mtKind='cash';
 const KIND={cash:'現金',bank:'口座',card:'カード',emoney:'電子マネー'};
 const KIND_OPTS={expense:['cash','bank','card','emoney'],income:['cash','bank','emoney']};
 /* チャージ式（前払い）の支払い方法か */
-const emoneyMethods=()=>methods('expense').filter(m=>m.kind==='emoney');
+const emoneyMethods=()=>moneyList().filter(m=>m.kind==='emoney');
 const isEmoneyMethod=n=>!!n&&emoneyMethods().some(m=>m.name===n);
 /* ICで払った記録か（＝集計に入れない。チャージ時に計上済みのため） */
 const isICPay=e=>e.type==='expense'&&isEmoneyMethod(e.method);
 /* 残高を持てる支払い方法（現金・口座・電子マネー）。カードは後払いなので持たない */
 const BAL_KINDS=['cash','bank','emoney'];
-const balanceMethods=()=>methods('expense').filter(m=>BAL_KINDS.includes(m.kind));
+const balanceMethods=()=>moneyList().filter(m=>BAL_KINDS.includes(m.kind));
 const hasBalance=n=>!!n&&balanceMethods().some(m=>m.name===n);
 /* 残高の移動（口座間の振替、現金の引き出し、電子マネーへのチャージ）
    移動先が残高を持つ方法なら、財布から出たお金ではないので集計に入れない */
@@ -2442,54 +2492,77 @@ const countsAsSpend=e=>{
   if(e.chargeTo&&hasBalance(e.chargeTo)&&!isEmoneyMethod(e.chargeTo))return false;
   return true;
 };
-$('mmSeg').onclick=e=>{
-  const b=e.target.closest('button');if(!b)return;
-  mmType=b.dataset.type;
-  [...$('mmSeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
-  renderMethods();
+/* 一覧の1行を作る */
+function methodRow(m,idx,kindLabel){
+  const sub=m.kind==='card'
+    ? [m.closingDay?`締め ${m.closingDay}日 ・ 引落し 翌月${m.payDay}日`:'',
+       m.payFrom?`${m.payFrom}から引落し`:''].filter(Boolean).join(' ・ ')
+    : '';
+  return `<div class="mrow sort-row" data-sid="${esc(m.name)}">
+    <span class="sort-handle" aria-label="並べ替え">≡</span>
+    <div style="flex:1;min-width:0">
+      <span class="cname">${esc(m.name)}<span class="kind-badge kind-${m.kind}">${KIND[m.kind]}</span></span>
+      ${sub?`<div class="mm-sub">${sub}</div>`:''}
+    </div>
+    <button class="edit" data-ed="${idx}">編集</button>
+  </div>`;
+}
+/* お金の置き場所 */
+function renderMoney(){
+  const l=moneyList();
+  $('moneyList').innerHTML=l.length
+    ? l.map((m,i)=>methodRow(m,i)).join('')
+    : '<p class="empty">「＋ 追加」から登録してください</p>';
+  if(l.length)makeSortable($('moneyList'),async names=>{
+    const a=meta.methods.money;
+    meta.methods.money=names.map(n=>a.find(m=>m.name===n)).filter(Boolean);
+    await saveMeta();renderMoney();
+  });
+  renderIC();
+}
+$('moneyList').onclick=e=>{
+  const ed=e.target.closest('[data-ed]');
+  if(ed)openMethodSheet(moneyList()[+ed.dataset.ed],'money');
 };
+$('addMoney').onclick=()=>openMethodSheet(null,'money');
+
+/* カード */
 function renderMethods(){
-  const l=methods(mmType);
-  $('mmList').innerHTML=l.map((m,i)=>{
-    const sub=m.kind==='card'&&m.closingDay?`締め ${m.closingDay}日 ・ 引落し 翌月${m.payDay}日`:'';
-    return `<div class="mrow sort-row" data-sid="${esc(m.name)}">
-      <span class="sort-handle" aria-label="並べ替え">≡</span>
-      <div style="flex:1;min-width:0">
-        <span class="cname">${esc(m.name)}<span class="kind-badge kind-${m.kind}">${KIND[m.kind]}</span></span>
-        ${sub?`<div class="mm-sub">${sub}</div>`:''}
-      </div>
-      <button class="edit" data-ed="${i}">編集</button>
-    </div>`;
-  }).join('')||'<p class="empty">「＋ 追加」から登録してください</p>';
+  const l=cardList();
+  $('mmList').innerHTML=l.length
+    ? l.map((m,i)=>methodRow(m,i)).join('')
+    : '<p class="empty">「＋ 追加」から登録してください</p>';
   if(l.length)makeSortable($('mmList'),async names=>{
-    const a=meta.methods[mmType];
-    meta.methods[mmType]=names.map(n=>a.find(m=>m.name===n)).filter(Boolean);
+    const a=meta.methods.card;
+    meta.methods.card=names.map(n=>a.find(m=>m.name===n)).filter(Boolean);
     await saveMeta();renderMethods();
   });
-  renderIC();renderBills();
+  renderBills();
 }
-$('mmList').onclick=async e=>{
+$('mmList').onclick=e=>{
   const ed=e.target.closest('[data-ed]');
-  if(ed)openMethodSheet(methods(mmType)[+ed.dataset.ed]);
+  if(ed)openMethodSheet(cardList()[+ed.dataset.ed],'card');
 };
-$('addMethod').onclick=()=>openMethodSheet(null);
+$('addMethod').onclick=()=>openMethodSheet(null,'card');
 
-function openMethodSheet(m){
+let mtTarget='money';        // 編集中の対象：money か card
+function openMethodSheet(m,target){
+  mtTarget=target||'money';
   mtEdit=m?m.name:null;
-  const opts=KIND_OPTS[mmType];
+  const opts=mtTarget==='card'?['card']:BAL_KINDS;
   mtKind=m?m.kind:opts[0];
   if(!opts.includes(mtKind))mtKind=opts[0];
-  $('mtTitle').textContent=m?'編集':'追加';
+  $('mtTitle').textContent=(m?'編集':'追加')+(mtTarget==='card'?'（カード）':'');
   $('mtName').value=m?m.name:'';
   $('mtDel').hidden=!m;
-  // 種別ボタンを支出/収入に応じて生成
+  // カードは種別を選ぶ必要がないので隠す
+  $('mtKindWrap').style.display=mtTarget==='card'?'none':'';
   $('mtKind').innerHTML=opts.map(k=>`<button type="button" data-kind="${k}" aria-pressed="${k===mtKind}">${KIND[k]}</button>`).join('');
-  $('mtKindWrap').style.display='';
   // 締め日・引落し日セレクト
   const days=n=>Array.from({length:31},(_,i)=>`<option value="${i+1}" ${n===i+1?'selected':''}>${i+1}日</option>`).join('');
   $('mtClosing').innerHTML=days(m&&m.closingDay?m.closingDay:15);
   $('mtPay').innerHTML=days(m&&m.payDay?m.payDay:10);
-  // 引落し口座（口座・現金など残高を持つ方法から選ぶ）
+  // 引落し口座（お金の置き場所から選ぶ）
   const accs=balanceMethods();
   $('mtPayFrom').innerHTML='<option value="">（指定しない）</option>'+
     accs.map(a=>`<option value="${esc(a.name)}" ${m&&m.payFrom===a.name?'selected':''}>${esc(a.name)}</option>`).join('');
@@ -2497,8 +2570,8 @@ function openMethodSheet(m){
   open($('methodSheet'));
 }
 function updateMtCard(){
-  $('mtCardWrap').hidden=!(mmType==='expense'&&mtKind==='card');
-  $('mtEmoneyHint').hidden=(mtKind!=='emoney');
+  $('mtCardWrap').hidden=(mtTarget!=='card');
+  $('mtKindHint').textContent=KIND_HINT[mtKind]||'';
 }
 $('mtKind').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;
@@ -2509,34 +2582,51 @@ $('mtKind').onclick=e=>{
 $('mtSave').onclick=async()=>{
   const name=$('mtName').value.trim();
   if(!name){toast('名前を入力してください');return}
-  if(methods(mmType).some(m=>m.name===name&&m.name!==mtEdit)){toast('同じ名前があります');return}
-  const kind=mtKind;
+  // お金とカードで名前が重ならないようにする（記録は名前で紐づくため）
+  const all=[...moneyList(),...cardList()];
+  if(all.some(m=>m.name===name&&m.name!==mtEdit)){toast('同じ名前があります');return}
+  const kind=mtTarget==='card'?'card':mtKind;
   const obj={name,kind};
   if(kind==='card'){obj.closingDay=+$('mtClosing').value;obj.payDay=+$('mtPay').value;obj.payFrom=$('mtPayFrom').value||''}
+  const arr=mtTarget==='card'?meta.methods.card:meta.methods.money;
   if(mtEdit){
-    // 改名時は記録のmethodも追従
+    // 改名したら、記録・チャージ先・カードの引落し口座も追従させる
     if(name!==mtEdit){
       await eachYear(d=>{let t=false;
-        d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit){e.method=name;t=true}});
+        d.entries.forEach(e=>{
+          if(e.method===mtEdit){e.method=name;t=true}
+          if(e.chargeTo===mtEdit){e.chargeTo=name;t=true}
+        });
         return t;});
+      cardList().forEach(c=>{if(c.payFrom===mtEdit)c.payFrom=name});
+      (meta.fixed||[]).forEach(f=>(f.payments||[]).forEach(p=>{if(p.method===mtEdit)p.method=name}));
     }
-    const idx=meta.methods[mmType].findIndex(m=>m.name===mtEdit);
-    meta.methods[mmType][idx]=obj;
-  }else meta.methods[mmType].push(obj);
-  await saveMeta();closeAll();renderMethods();await render();toast(mtEdit?'変更しました':'追加しました');
+    const idx=arr.findIndex(m=>m.name===mtEdit);
+    if(idx>=0)arr[idx]=obj;else arr.push(obj);
+  }else arr.push(obj);
+  await saveMeta();closeAll();
+  renderMoney();renderMethods();await render();
+  toast(mtEdit?'変更しました':'追加しました');
 };
 $('mtDel').onclick=async()=>{
+  const arr=mtTarget==='card'?meta.methods.card:meta.methods.money;
+  if(mtTarget==='money'&&arr.length<=1){toast('お金の置き場所は少なくとも1つ必要です');return}
   let used=0;
   for(const y of meta.years){const d=await year(y);
-    d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit)used++})}
-  if(methods(mmType).length<=1){toast('少なくとも1つは必要です');return}
+    d.entries.forEach(e=>{if(e.method===mtEdit||e.chargeTo===mtEdit)used++})}
   if(!confirm(used?`「${mtEdit}」を削除すると、${used}件の記録が「未設定」になります。よろしいですか？`
                   :`「${mtEdit}」を削除します。よろしいですか？`))return;
   await eachYear(d=>{let t=false;
-    d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit){e.method='';t=true}});
+    d.entries.forEach(e=>{
+      if(e.method===mtEdit){e.method='';t=true}
+      if(e.chargeTo===mtEdit){e.chargeTo='';t=true}
+    });
     return t;});
-  meta.methods[mmType]=methods(mmType).filter(m=>m.name!==mtEdit);
-  await saveMeta();closeAll();renderMethods();await render();toast('削除しました');
+  cardList().forEach(c=>{if(c.payFrom===mtEdit)c.payFrom=''});
+  meta.methods[mtTarget==='card'?'card':'money']=arr.filter(m=>m.name!==mtEdit);
+  await saveMeta();closeAll();
+  renderMoney();renderMethods();await render();
+  toast('削除しました');
 };
 
 /* ---- カード請求ビュー ---- */
@@ -2569,9 +2659,9 @@ function billEntriesOf(all,card,y,m){
   }).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
 }
 async function renderBills(){
-  const cards=methods('expense').filter(m=>m.kind==='card');
+  const cards=cardList();
   const box=$('billView');
-  if(mmType!=='expense'||!cards.length){box.innerHTML='';return}
+  if(!cards.length){box.innerHTML='';return}
   const now=new Date();
   if(!billMonth)billMonth={y:now.getFullYear(),m:now.getMonth()};
   const all=await allCardEntries();
@@ -2600,7 +2690,7 @@ async function renderBills(){
 /* ホームのカード請求 */
 let homeBillMonth=null;
 async function renderHomeBills(){
-  const cards=methods('expense').filter(m=>m.kind==='card');
+  const cards=cardList();
   $('homeBillCard').hidden=!cards.length;
   if(!cards.length)return;
   const all=await allCardEntries();
@@ -3059,7 +3149,7 @@ function icBalance(name,all,upto){
 /* この口座から引き落とされたカード代金の合計（引き落とし日を過ぎた分だけ） */
 function cardWithdrawn(accountName,all,until){
   let sum=0;
-  methods('expense').filter(m=>m.kind==='card'&&m.payFrom===accountName).forEach(card=>{
+  cardList().filter(m=>m.payFrom===accountName).forEach(card=>{
     payDates(card,all,until).forEach(p=>{sum+=p.amount});
   });
   return sum;
@@ -3100,7 +3190,7 @@ function icEntriesOf(all,name){
 async function renderIC(){
   const ems=balanceMethods();
   const box=$('icView');
-  if(mmType!=='expense'||!ems.length){box.innerHTML='';return}
+  if(!ems.length){box.innerHTML='';return}
   const all=await allEntriesAll();
   box.innerHTML=`<div class="bill">
     <p class="card-title">残高</p>
@@ -3426,7 +3516,7 @@ $('impFile').onchange=async e=>{
     parsed.sort((a,b)=>String(a.exportedAt||'')<String(b.exportedAt||'')?-1:1);
     const newest=parsed[parsed.length-1];
     if(newest.cats)meta.cats=newest.cats;
-    if(newest.methods)meta.methods=newest.methods;
+    if(newest.methods){meta.methods=newest.methods;migrateMethods()}   // 旧形式なら新構造へ
     if(newest.rates){meta.rates=newest.rates;if(newest.defaultRate)meta.defaultRate=newest.defaultRate}
     if(newest.fixed)meta.fixed=newest.fixed;
     await saveMeta();
@@ -3459,6 +3549,7 @@ $('wipe').onclick=async()=>{
     if(patched)await saveMeta();
   }
   if(!meta.methods){seedMethods();await saveMeta()}
+  else if(migrateMethods())await saveMeta();
   if(!meta.rates){meta.rates=[...DEFAULT_RATES];meta.defaultRate=10;await saveMeta()}
   if(!meta.fixed){meta.fixed=[];await saveMeta()}
   else{ // 旧データ：単一の支払い方法を日付つきの形に移す
