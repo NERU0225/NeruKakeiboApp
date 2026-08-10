@@ -951,7 +951,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v4.6';
+const APP_VERSION='v4.7';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -960,6 +960,7 @@ const APP_VERSION='v4.6';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v5', released:'', items:[
+    ['v4.7','お金・カードの追加と編集ができない不具合を修正'],
     ['v4.6','起動時に画面が表示されない不具合を修正（固定費の処理が欠けていた）。金額の表示切替を分かりやすく'],
     ['v4.5','お金・カードを追加できない不具合を修正。ホームの並び替え、金額の伏せ字、折りたたみ、残高マイナスの注意を追加'],
     ['v4.4','設定を「お金」と「カード」に分離。お金の置き場所は支払いと収入で共通に'],
@@ -1904,8 +1905,10 @@ function syncExpToggle(){
   const showClaim=entryExpense&&(editStatus==='claimed'||editStatus==='settled');
   const showSettle=entryExpense&&editStatus==='settled';
   $('expDatesWrap').hidden=!(showClaim||showSettle);
-  $('fClaimDate').closest('.field').style.display=showClaim?'':'none';
-  $('fSettleDate').closest('.field').style.display=showSettle?'':'none';
+  const cf=$('fClaimDate')&&$('fClaimDate').closest('.field');
+  const sf=$('fSettleDate')&&$('fSettleDate').closest('.field');
+  if(cf)cf.style.display=showClaim?'':'none';
+  if(sf)sf.style.display=showSettle?'':'none';
 }
 $('expToggle').onclick=()=>{entryExpense=!entryExpense;syncExpToggle()};
 const today=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
@@ -2547,6 +2550,13 @@ $('rateAdd').onclick=async()=>{
 /* ============ 支払い方法・収入経路 ============ */
 let mtEdit=null, mtKind='cash';
 const KIND={cash:'現金',bank:'口座',card:'カード',emoney:'電子マネー'};
+/* 種別を選んだときに出す説明 */
+const KIND_HINT={
+  cash:'財布や家にある現金です。残高を管理します。',
+  bank:'銀行の口座です。残高を管理し、カードの引き落とし先にも指定できます。',
+  emoney:'先にチャージして使うもの（Suica・PayPay残高など）です。残高を管理し、この方法で払った分は集計に入れません（チャージ時に計上済みのため）。あと払い・iD・QUICPayなど後払いのものは「カード」で登録してください。',
+  card:'クレジットカードなど、使った分が後から口座で引き落とされるものです。残高は持ちません。',
+};
 const KIND_OPTS={expense:['cash','bank','card','emoney'],income:['cash','bank','emoney']};
 /* チャージ式（前払い）の支払い方法か */
 const emoneyMethods=()=>moneyList().filter(m=>m.kind==='emoney');
@@ -2727,6 +2737,21 @@ async function allCardEntries(){
   for(const y of meta.years){const d=await year(y);
     d.entries.forEach(e=>{if(e.type==='expense'&&e.method)all.push(e)})}
   return all;
+}
+/* カードの利用履歴シート */
+async function openCardHistory(cardName,y,m){
+  const card=cardList().find(c=>c.name===cardName);if(!card)return;
+  const all=await allCardEntries();
+  const list=billEntriesOf(all,card,y,m);
+  const {start,end}=billPeriod(card,y,m);
+  const sum=list.reduce((s,e)=>s+total(e),0);
+  $('cardHistTitle').textContent=cardName;
+  $('cardHistSub').textContent=`${y}年${m+1}月引き落とし ・ ${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()}締め`;
+  $('cardHistAmt').textContent=yen(sum);
+  $('cardHistCount').textContent=`${list.length}件`;
+  $('cardHistList').innerHTML=list.length?groupHTML(list)
+    :'<div class="card"><p class="empty">この期間の利用はありません</p></div>';
+  open($('cardHistSheet'));
 }
 function billEntriesOf(all,card,y,m){
   const {start,end}=billPeriod(card,y,m);
