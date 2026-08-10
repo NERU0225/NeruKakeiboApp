@@ -36,10 +36,11 @@
     font-variant-numeric:tabular-nums;letter-spacing:.02em;
     background:none;border:none;padding:6px;cursor:pointer;font-family:var(--font)}
   .ver:active{opacity:.5}
-  .eye{position:absolute;right:8px;bottom:4px;font-size:13px;color:var(--sub);
-    background:none;border:none;padding:6px 8px;cursor:pointer;font-family:var(--font)}
-  .eye:active{opacity:.5}
-  .eye.off{color:var(--blue)}
+  .eye{position:absolute;right:8px;bottom:4px;font-size:10px;color:var(--sub);
+    background:var(--bg);border:1px solid var(--line);border-radius:99px;
+    padding:4px 10px;cursor:pointer;font-family:var(--font);white-space:nowrap}
+  .eye:active{opacity:.6}
+  .eye.off{color:#fff;background:var(--blue);border-color:var(--blue)}
   .fold-head{display:flex;align-items:center;justify-content:space-between;width:100%;
     background:none;border:none;padding:0 0 12px;cursor:pointer;font-family:var(--font);color:inherit}
   .fold-head:active{opacity:.6}
@@ -447,7 +448,7 @@
   </div>
   <header>
     <button class="ver" id="verLabel" aria-label="バージョン履歴"></button>
-    <button class="eye" id="eyeBtn" aria-label="金額の表示切替">◉</button>
+    <button class="eye" id="eyeBtn" aria-label="金額の表示切替">金額を隠す</button>
     <button id="prev" aria-label="前の月">‹</button>
     <button id="monthLabel" class="num">—</button>
     <button id="next" aria-label="次の月">›</button>
@@ -950,7 +951,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v4.5';
+const APP_VERSION='v4.6';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -959,6 +960,7 @@ const APP_VERSION='v4.5';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v5', released:'', items:[
+    ['v4.6','起動時に画面が表示されない不具合を修正（固定費の処理が欠けていた）。金額の表示切替を分かりやすく'],
     ['v4.5','お金・カードを追加できない不具合を修正。ホームの並び替え、金額の伏せ字、折りたたみ、残高マイナスの注意を追加'],
     ['v4.4','設定を「お金」と「カード」に分離。お金の置き場所は支払いと収入で共通に'],
     ['v4.3','「お金の置き場所」と「カード」を分けて表示。種別ごとの説明を追加'],
@@ -1291,7 +1293,7 @@ $('eyeBtn').onclick=async()=>{
   hideAmounts=!hideAmounts;
   saveHomePrefs();
   $('eyeBtn').classList.toggle('off',hideAmounts);
-  $('eyeBtn').textContent=hideAmounts?'◎':'◉';
+  $('eyeBtn').textContent=hideAmounts?'金額を表示':'金額を隠す';
   await render();
 };
 
@@ -1405,7 +1407,8 @@ async function render(){
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   $('dTotal').textContent=yen(bookOut);
   updateFilterBar();
-  const dLabel=$('donut').closest('.donut-wrap').querySelector('.donut-c span');
+  const dWrap=$('donut')&&$('donut').closest('.donut-wrap');
+  const dLabel=dWrap&&dWrap.querySelector('.donut-c span');
   if(dLabel){
     const head=bookPeriod==='year'?(Y()+'年'):bookPeriod==='custom'?'期間':'';
     const kind=bookBase==='use'?'利用額':'支出';
@@ -2964,6 +2967,344 @@ $('icAdjustOk').onclick=async()=>{
   toast('残高を合わせました');
 };
 
+/* ============ 固定費 ============ */
+const fixedList=()=>meta.fixed||(meta.fixed=[]);
+const DOW=['日','月','火','水','木','金','土'];
+let fxEdit=null, fxFreq='month', fxBy='day', fxAmounts=[], fxPays=[], fxNoEnd=true;
+
+function fixedFreqText(f){
+  if(f.freq==='week')return `毎週${DOW[f.dow||0]}曜日`;
+  if(f.freq==='year')return `毎年${f.month||1}月${f.day||1}日`;
+  if(f.by==='dow'){
+    const nth=f.nth===-1?'最終':`第${f.nth||1}`;
+    return `毎月${nth}${DOW[f.nthDow||0]}曜日`;
+  }
+  return `毎月${f.day||1}日`;
+}
+/* その日に適用される金額 */
+function amountAt(f,date){
+  const list=[...(f.amounts||[])].sort((a,b)=>a.from<b.from?-1:1);
+  if(!list.length)return null;
+  let hit=null;
+  for(const a of list){if(a.from<=date)hit=a}
+  return hit||list[0];
+}
+/* その日に適用される支払い方法 */
+function payAt(f,date){
+  const list=[...(f.payments||[])].sort((a,b)=>a.from<b.from?-1:1);
+  if(!list.length)return f.method||'';
+  let hit=null;
+  for(const p of list){if(p.from<=date)hit=p}
+  return (hit||list[0]).method||'';
+}
+/* y年m月の「第n ◯曜日」の日。無ければ null。n=-1 は最終週 */
+function nthDowDate(y,m,n,dow){
+  const len=lastDay(y,m);
+  if(n===-1){
+    for(let d=len;d>=1;d--)if(new Date(y,m,d).getDay()===dow)return d;
+    return null;
+  }
+  const first=new Date(y,m,1).getDay();
+  const d=1+((dow-first+7)%7)+(n-1)*7;
+  return d<=len?d:null;
+}
+/* 開始〜終了(または今日)までの支払日をすべて出す */
+function fixedOccurrences(f,until){
+  const out=[];
+  const start=f.start, end=f.end||until;
+  const last=end<until?end:until;
+  if(!start||start>last)return out;
+  const sy=+start.slice(0,4), sm=+start.slice(5,7)-1;
+  const ly=+last.slice(0,4);
+  const iso=(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  if(f.freq==='week'){
+    const d=new Date(start+'T00:00:00');
+    while(d.getDay()!==(f.dow||0))d.setDate(d.getDate()+1);
+    let guard=0;
+    while(guard++<2000){
+      const s=iso(d.getFullYear(),d.getMonth(),d.getDate());
+      if(s>last)break;
+      if(s>=start)out.push(s);
+      d.setDate(d.getDate()+7);
+    }
+  }else if(f.freq==='year'){
+    const mo=(f.month||1)-1;
+    for(let y=sy;y<=ly;y++){
+      const s=iso(y,mo,Math.min(f.day||1,lastDay(y,mo)));
+      if(s>=start&&s<=last)out.push(s);
+    }
+  }else{
+    let y=sy,m=sm,guard=0;
+    while(guard++<1200){
+      let s=null;
+      if(f.by==='dow'){
+        const d=nthDowDate(y,m,f.nth||1,f.nthDow||0);
+        if(d)s=iso(y,m,d);
+      }else s=iso(y,m,Math.min(f.day||1,lastDay(y,m)));
+      if(s){
+        if(s>last)break;
+        if(s>=start)out.push(s);
+      }else if(iso(y,m,lastDay(y,m))>last)break;
+      m++;if(m>11){m=0;y++}
+    }
+  }
+  return out;
+}
+/* 設定を変えたとき、今の設定では作られないはずの自動生成記録を消す */
+async function cleanupFixed(f){
+  const valid=new Set(fixedOccurrences(f,today()));
+  let removed=0;
+  await eachYear(d=>{
+    const before=d.entries.length;
+    d.entries=d.entries.filter(e=>!(e.fixedId===f.id&&!valid.has(e.date)));
+    const diff=before-d.entries.length;
+    removed+=diff;
+    return diff>0;
+  });
+  return removed;
+}
+/* 固定費から記録を自動生成する（重複は作らない） */
+async function generateFixed(){
+  const list=fixedList();
+  if(!list.length)return 0;
+  const until=today();
+  let made=0;
+  const touched=new Set();
+  for(const f of list){
+    if(!f.amounts||!f.amounts.length)continue;
+    for(const date of fixedOccurrences(f,until)){
+      const y=+date.slice(0,4);
+      const d=await year(y);
+      if(d.entries.some(e=>e.fixedId===f.id&&e.date===date))continue;
+      const a=amountAt(f,date);
+      if(!a||!a.amount)continue;
+      const item={name:f.name,category:f.category,sub:f.sub||'',
+        amount:Math.floor(Number(a.amount)||0),qty:1,taxIn:a.taxIn!==false};
+      if(item.taxIn===false)item.rate=a.rate||defaultRate();
+      d.entries.push({id:Date.now()+Math.floor(Math.random()*10000),
+        date,type:'expense',store:f.store||f.name,memo:'',items:[item],
+        expense:false,method:payAt(f,date),fixedId:f.id});
+      touched.add(y);made++;
+    }
+  }
+  for(const y of touched)await saveYear(y);
+  return made;
+}
+/* 一覧 */
+function renderFixed(){
+  const l=fixedList();
+  const td=today();
+  $('fixedList').innerHTML=l.length?l.map((f,i)=>{
+    const a=amountAt(f,td);
+    const ended=f.end&&f.end<td;
+    const period=f.start?`${f.start.replace(/-/g,'/')}〜${f.end?f.end.replace(/-/g,'/'):'無期限'}`:'';
+    return `<div class="fx-row ${ended?'fx-off':''}">
+      <div class="fx-main">
+        <div class="fx-nm">${esc(f.name)}${ended?'（終了）':''}</div>
+        <div class="fx-meta">${fixedFreqText(f)} ・ ${esc(f.category)} ・ ${esc(payAt(f,td)||'未設定')}</div>
+        <div class="fx-meta">${period}</div>
+      </div>
+      <span class="fx-amt">${a?yen(a.amount):'—'}</span>
+      <button class="edit" data-fx="${i}">編集</button>
+    </div>`;
+  }).join(''):'<p class="empty">「＋ 固定費を追加」から登録してください</p>';
+}
+$('fixedList').onclick=e=>{
+  const b=e.target.closest('[data-fx]');if(!b)return;
+  openFixedSheet(fixedList()[+b.dataset.fx]);
+};
+$('addFixed').onclick=()=>openFixedSheet(null);
+
+function openFixedSheet(f){
+  fxEdit=f?f.id:null;
+  $('fxTitle').textContent=f?'固定費を編集':'固定費を追加';
+  $('fxDel').hidden=!f;
+  $('fxName').value=f?f.name:'';
+  $('fxStore').value=f?(f.store||''):'';
+  const cs=cats('expense');
+  $('fxCat').innerHTML=cs.map(c=>`<option value="${esc(c.name)}" ${f&&f.category===c.name?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('');
+  fxSyncSub(f?f.sub:'');
+  // 支払い方法（日付つきで複数持てる）
+  const firstMs=methods('expense')[0];
+  fxPays=f?((f.payments&&f.payments.length)?f.payments.map(p=>({...p}))
+        :[{from:f.start||today(),method:f.method||(firstMs?firstMs.name:'')}])
+       :[{from:today(),method:firstMs?firstMs.name:''}];
+  // 周期
+  fxFreq=f?f.freq:'month';
+  [...$('fxFreq').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.freq===fxFreq));
+  $('fxDow').innerHTML=DOW.map((w,i)=>`<option value="${i}" ${f&&f.dow===i?'selected':''}>${w}曜日</option>`).join('');
+  $('fxMonth').innerHTML=Array.from({length:12},(_,i)=>`<option value="${i+1}" ${f&&f.month===i+1?'selected':''}>${i+1}月</option>`).join('');
+  $('fxDay').innerHTML=Array.from({length:31},(_,i)=>`<option value="${i+1}" ${f&&f.day===i+1?'selected':''}>${i+1}日</option>`).join('');
+  if(!f)$('fxDay').value=String(new Date().getDate());
+  fxBy=(f&&f.by==='dow')?'dow':'day';
+  [...$('fxBySeg').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.by===fxBy));
+  const NTH=[[1,'第1'],[2,'第2'],[3,'第3'],[4,'第4'],[5,'第5'],[-1,'最終']];
+  $('fxNth').innerHTML=NTH.map(([v,l])=>`<option value="${v}" ${f&&f.nth===v?'selected':''}>${l}</option>`).join('');
+  $('fxNthDow').innerHTML=DOW.map((w,i)=>`<option value="${i}" ${f&&f.nthDow===i?'selected':''}>${w}曜日</option>`).join('');
+  fxSyncFreq();
+  // 期間
+  $('fxStart').value=f?f.start:today();
+  fxNoEnd=f?!f.end:true;
+  $('fxNoEnd').setAttribute('aria-checked',fxNoEnd?'true':'false');
+  $('fxEndField').hidden=fxNoEnd;
+  $('fxEnd').value=f&&f.end?f.end:'';
+  // 金額
+  fxAmounts=f?(f.amounts||[]).map(a=>({...a})):[{from:today(),amount:'',taxIn:true,rate:defaultRate()}];
+  if(!fxAmounts.length)fxAmounts=[{from:today(),amount:'',taxIn:true,rate:defaultRate()}];
+  drawFxPays();drawFxAmounts();
+  open($('fixedSheet'));
+}
+function fxSyncSub(cur){
+  const c=$('fxCat').value, subs=subsOf('expense',c);
+  $('fxSubField').hidden=!subs.length;
+  $('fxSub').innerHTML='<option value="">（なし）</option>'+
+    subs.map(s=>`<option value="${esc(s)}" ${cur===s?'selected':''}>${esc(s)}</option>`).join('');
+}
+$('fxCat').onchange=()=>fxSyncSub('');
+function fxSyncFreq(){
+  const byDow=(fxFreq==='month'&&fxBy==='dow');
+  $('fxDowField').hidden=fxFreq!=='week';
+  $('fxMonthField').hidden=fxFreq!=='year';
+  $('fxMonthMode').hidden=fxFreq!=='month';
+  $('fxDayField').hidden=(fxFreq==='week')||byDow;
+  $('fxDayHint').hidden=(fxFreq==='week')||byDow;
+  $('fxNthField').hidden=!byDow;
+  $('fxNthHint').hidden=!byDow;
+}
+$('fxBySeg').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  fxBy=b.dataset.by;
+  [...$('fxBySeg').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  fxSyncFreq();
+};
+$('fxFreq').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  fxFreq=b.dataset.freq;
+  [...$('fxFreq').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  fxSyncFreq();
+};
+$('fxNoEnd').onclick=()=>{
+  fxNoEnd=!fxNoEnd;
+  $('fxNoEnd').setAttribute('aria-checked',fxNoEnd?'true':'false');
+  $('fxEndField').hidden=fxNoEnd;
+};
+/* 支払い方法の行 */
+function drawFxPays(){
+  const ms=methods('expense');
+  $('fxPays').innerHTML=fxPays.map((p,i)=>`<div class="amt-row">
+    <input type="date" data-pi="${i}" data-pf="from" value="${p.from||''}">
+    <select class="pay-sel" data-pi="${i}" data-pf="method">
+      ${ms.length?ms.map(m=>`<option value="${esc(m.name)}" ${p.method===m.name?'selected':''}>${esc(m.name)}</option>`).join('')
+        :'<option value="">（未登録）</option>'}
+    </select>
+    ${fxPays.length>1?`<button type="button" class="rm" data-prmv="${i}" aria-label="消す">✕</button>`:''}
+  </div>`).join('');
+}
+$('fxPays').addEventListener('input',e=>{
+  const t=e.target;if(t.dataset.pi===undefined)return;
+  fxPays[+t.dataset.pi][t.dataset.pf]=t.value;
+});
+$('fxPays').addEventListener('change',e=>{
+  const t=e.target;if(t.dataset.pi===undefined)return;
+  fxPays[+t.dataset.pi][t.dataset.pf]=t.value;
+});
+$('fxPays').addEventListener('click',e=>{
+  const rm=e.target.closest('[data-prmv]');
+  if(rm){fxPays.splice(+rm.dataset.prmv,1);drawFxPays()}
+});
+$('fxAddPay').onclick=()=>{
+  const last=fxPays[fxPays.length-1]||{};
+  fxPays.push({from:today(),method:last.method||''});
+  drawFxPays();
+};
+/* 金額の行 */
+function drawFxAmounts(){
+  $('fxAmounts').innerHTML=fxAmounts.map((a,i)=>{
+    const taxIn=a.taxIn!==false;
+    return `<div class="amt-row">
+      <input type="date" data-ai="${i}" data-af="from" value="${a.from||''}">
+      <input class="amt-in" type="number" inputmode="numeric" data-ai="${i}" data-af="amount" value="${a.amount}" placeholder="0">
+      ${fxAmounts.length>1?`<button type="button" class="rm" data-armv="${i}" aria-label="消す">✕</button>`:''}
+    </div>
+    <div class="amt-tax">
+      <button type="button" class="taxbtn ${taxIn?'in':'ex'}" data-atax="${i}">${taxIn?'税込':'税抜'}</button>
+      ${taxIn?'':`<select class="ratesel" data-ai="${i}" data-af="rate">
+        ${rates().map(r=>`<option value="${r}" ${(a.rate||defaultRate())===r?'selected':''}>${r}%</option>`).join('')}</select>`}
+    </div>`;
+  }).join('');
+}
+$('fxAmounts').addEventListener('input',e=>{
+  const t=e.target;if(t.dataset.ai===undefined)return;
+  fxAmounts[+t.dataset.ai][t.dataset.af]=t.value;
+});
+$('fxAmounts').addEventListener('change',e=>{
+  const t=e.target;if(t.dataset.ai===undefined)return;
+  fxAmounts[+t.dataset.ai][t.dataset.af]=t.dataset.af==='rate'?+t.value:t.value;
+});
+$('fxAmounts').addEventListener('click',e=>{
+  const tx=e.target.closest('[data-atax]');
+  if(tx){const i=+tx.dataset.atax;
+    fxAmounts[i].taxIn=!(fxAmounts[i].taxIn!==false);
+    if(fxAmounts[i].taxIn===false&&!fxAmounts[i].rate)fxAmounts[i].rate=defaultRate();
+    drawFxAmounts();return}
+  const rm=e.target.closest('[data-armv]');
+  if(rm){fxAmounts.splice(+rm.dataset.armv,1);drawFxAmounts()}
+});
+$('fxAddAmount').onclick=()=>{
+  const lastA=fxAmounts[fxAmounts.length-1]||{};
+  fxAmounts.push({from:today(),amount:'',taxIn:lastA.taxIn!==false,rate:lastA.rate||defaultRate()});
+  drawFxAmounts();
+};
+$('fxSave').onclick=async()=>{
+  const name=$('fxName').value.trim();
+  if(!name){toast('品名を入力してください');return}
+  const start0=$('fxStart').value;
+  const payments=fxPays
+    .map(p=>({from:p.from||start0,method:p.method||''}))
+    .filter(p=>p.method)
+    .sort((a,b)=>a.from<b.from?-1:1);
+  if(!payments.length){toast('支払い方法を選んでください');return}
+  const start=$('fxStart').value;
+  if(!start){toast('開始日を入力してください');return}
+  const end=fxNoEnd?'':$('fxEnd').value;
+  if(end&&end<start){toast('終了日は開始日より後にしてください');return}
+  const amounts=fxAmounts
+    .map(a=>({from:a.from||start,amount:Math.floor(Number(a.amount)||0),
+      taxIn:a.taxIn!==false,rate:a.taxIn===false?(+a.rate||defaultRate()):undefined}))
+    .filter(a=>a.amount>0)
+    .sort((a,b)=>a.from<b.from?-1:1);
+  if(!amounts.length){toast('金額を入力してください');return}
+  const obj={
+    id:fxEdit||Date.now(),
+    name,store:$('fxStore').value.trim(),
+    category:$('fxCat').value,sub:$('fxSub').value||'',
+    payments,freq:fxFreq,
+    dow:fxFreq==='week'?+$('fxDow').value:undefined,
+    month:fxFreq==='year'?+$('fxMonth').value:undefined,
+    by:fxFreq==='month'?fxBy:undefined,
+    nth:(fxFreq==='month'&&fxBy==='dow')?+$('fxNth').value:undefined,
+    nthDow:(fxFreq==='month'&&fxBy==='dow')?+$('fxNthDow').value:undefined,
+    day:(fxFreq==='week'||(fxFreq==='month'&&fxBy==='dow'))?undefined:+$('fxDay').value,
+    start,end,amounts
+  };
+  const l=fixedList();
+  const idx=l.findIndex(x=>x.id===fxEdit);
+  if(idx>=0)l[idx]=obj;else l.push(obj);
+  await saveMeta();
+  closeAll();
+  const removed=await cleanupFixed(obj);
+  const made=await generateFixed();
+  renderFixed();await render();
+  const msg=[made?`${made}件を記録`:'',removed?`${removed}件を整理`:''].filter(Boolean).join('・');
+  toast(msg?`保存しました（${msg}）`:'保存しました');
+};
+$('fxDel').onclick=async()=>{
+  const f=fixedList().find(x=>x.id===fxEdit);if(!f)return;
+  if(!confirm(`「${f.name}」を削除します。これまでに記録された分はそのまま残り、今後は自動で作られなくなります。よろしいですか？`))return;
+  meta.fixed=fixedList().filter(x=>x.id!==fxEdit);
+  await saveMeta();closeAll();renderFixed();await render();toast('削除しました');
+};
+
 /* ============ カテゴリ管理 ============ */
 $('mgSeg').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;
@@ -3247,7 +3588,7 @@ $('wipe').onclick=async()=>{
 (async()=>{
   $('verLabel').textContent=APP_VERSION;
   $('eyeBtn').classList.toggle('off',hideAmounts);
-  $('eyeBtn').textContent=hideAmounts?'◎':'◉';
+  $('eyeBtn').textContent=hideAmounts?'金額を表示':'金額を隠す';
   applyFold();
   if(!canSave){
     const w=$('warnBanner');w.hidden=false;
