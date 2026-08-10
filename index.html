@@ -181,6 +181,14 @@
   .bill-nav{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:6px}
   .bill-nav button{background:none;border:none;color:var(--sub);font-size:16px;padding:4px 10px;cursor:pointer}
   .bill-nav b{font-size:13px;min-width:8em;text-align:center}
+  .bill-total{display:flex;align-items:baseline;justify-content:space-between;
+    padding:2px 0 12px;border-bottom:1px solid var(--line);margin-bottom:4px}
+  .bill-total span{font-size:12px;color:var(--sub)}
+  .bill-total b{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .bill-when.soon{color:var(--red)}
+  .bill-done-head{font-size:11px;color:var(--sub);padding:12px 0 2px;
+    border-top:1px solid var(--line);margin-top:8px}
+  .bill-done{opacity:.55}
 
   /* 経費トグル */
   .exp-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -447,14 +455,11 @@
         <div class="b-foot"><span id="bUsed"></span><span id="bTotal"></span></div>
       </div>
       <div class="card" id="homeICCard" hidden>
-        <p class="card-title">ICカードの残高</p>
+        <p class="card-title">残高</p>
         <div id="homeICList"></div>
       </div>
       <div class="card" id="homeBillCard" hidden>
         <p class="card-title">カード請求</p>
-        <div class="bill-nav">
-          <button id="homeBillPrev">‹</button><b id="homeBillLabel"></b><button id="homeBillNext">›</button>
-        </div>
         <div id="homeBillList"></div>
       </div>
       <div class="card">
@@ -673,8 +678,8 @@
   <div class="suggest" id="storeSuggest" hidden></div>
   <div class="field"><label for="fDate">日付</label><input type="date" id="fDate"></div>
   <div class="field"><label for="fMethod" id="methodLabel">支払い</label><select id="fMethod" style="flex:1"></select></div>
-  <div class="field" id="fChargeField" hidden><label for="fChargeTo">チャージ先</label><select id="fChargeTo" style="flex:1"></select></div>
-  <p class="hint" id="fChargeHint" hidden style="margin:-4px 0 0">チャージ先を選ぶと、その残高に加算されます。</p>
+  <div class="field" id="fChargeField" hidden><label for="fChargeTo">移動先</label><select id="fChargeTo" style="flex:1"></select></div>
+  <p class="hint" id="fChargeHint" hidden style="margin:-4px 0 0">口座間の振替、現金の引き出し、電子マネーへのチャージに使います。選ぶと移動先の残高が増え、支出には計上されません。</p>
   <div class="field"><label for="fMemo">メモ</label><input type="text" id="fMemo" placeholder="任意" maxlength="40"></div>
   <button type="button" class="link route-toggle" id="routeToggle">＋ 区間（乗った場所・降りた場所）</button>
   <div id="routeWrap" hidden>
@@ -759,7 +764,9 @@
       <select id="mtClosing" style="flex:1"></select></div>
     <div class="field"><label for="mtPay">引落し日</label>
       <select id="mtPay" style="flex:1"></select></div>
-    <p class="hint" style="margin-top:4px">締め日の翌月に引き落とし、として計算します。</p>
+    <div class="field"><label for="mtPayFrom">引落し口座</label>
+      <select id="mtPayFrom" style="flex:1"></select></div>
+    <p class="hint" style="margin-top:4px">締め日の翌月に引き落とし、として計算します。引落し口座を選ぶと、引き落とし日にその残高から差し引きます。</p>
   </div>
   <div class="actions">
     <button class="btn btn-ghost" id="mtDel" hidden>削除</button>
@@ -906,7 +913,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v4';
+const APP_VERSION='v4.2';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -915,6 +922,8 @@ const APP_VERSION='v4';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v5', released:'', items:[
+    ['v4.2','口座を登録してもホームに残高が出ない不具合を修正'],
+    ['v4.1','カード請求を「これから引き落とし／済み」で表示。口座・現金の残高管理と、口座間の移動に対応'],
   ]},
   {ver:'v4', released:'2026-08-07', items:[
     ['v3.3','更新通知の表示確認（機能の変更なし）'],
@@ -1237,7 +1246,7 @@ async function render(){
     .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
 
   // IC払い（チャージ済みの残高から払ったぶん）は二重計上になるので集計に入れない
-  const out=es.filter(e=>e.type==='expense'&&!isICPay(e)).reduce((s,e)=>s+total(e),0);
+  const out=es.filter(countsAsSpend).reduce((s,e)=>s+total(e),0);
   const inc=es.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
   $('sOut').textContent=yen(out);$('sIn').textContent=yen(inc);
   const net=inc-out;
@@ -1251,7 +1260,7 @@ async function render(){
   const bookEs=periodEs.filter(e=>{
     if(e.type!=='expense')return false;
     if(!(bookInclExp||!isExp(e)))return false;
-    return bookBase==='use' ? !e.chargeTo : !isICPay(e);
+    return bookBase==='use' ? !e.chargeTo : countsAsSpend(e);
   });
   const bookOut=bookEs.reduce((s,e)=>s+total(e),0);
 
@@ -1276,7 +1285,7 @@ async function render(){
   });
   // 予算タブ用：常に「表示中の月」の実支出（経費も含む）で集計する
   const monthCatMap={};
-  es.filter(e=>e.type==='expense'&&!isICPay(e)).forEach(e=>{
+  es.filter(countsAsSpend).forEach(e=>{
     const tb=taxBreakdown(e.items);
     e.items.forEach((i,idx)=>{
       monthCatMap[i.category]=(monthCatMap[i.category]||0)+lineSub(i)+tb.perItemTax[idx];
@@ -1402,6 +1411,9 @@ function itemHTML(e){
 function showTab(n){
   ['home','cal','book','expense','budget','set'].forEach(t=>$('tab-'+t).hidden=t!==n);
   document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===n));
+  if(n==='home'){                      // 残高やカード請求を最新にする
+    renderHomeIC();renderHomeBills();
+  }
   if(n==='expense'){expSelected.clear();renderExpense()}
   if(n==='cal')renderCalendar();
   if(n==='set'){                       // 開いていたカードを最新に描き直す
@@ -1539,7 +1551,7 @@ async function renderHist(){
   const hit=all.filter(e=>entryMatches(e,q))
     .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
   // 合計（支出・収入を分けて）
-  const out=hit.filter(e=>e.type==='expense'&&!isICPay(e)).reduce((s,e)=>s+total(e),0);
+  const out=hit.filter(countsAsSpend).reduce((s,e)=>s+total(e),0);
   const inc=hit.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
   const ic=hit.filter(e=>isICPay(e)).reduce((s,e)=>s+total(e),0);
   const icLine=ic?`<br>IC払い ${yen(ic)}<small>（集計外）</small>`:'';
@@ -1748,15 +1760,16 @@ function fillMethodSelect(sel){
 }
 function fillChargeSelect(sel){
   const cur=$('fMethod').value;
-  // 電子マネー同士のチャージ（楽天キャッシュ→Suica など）はありうるので許可する。
-  // ありえないのは「自分自身へのチャージ」だけなので、それだけ選択肢から外す。
-  const ems=emoneyMethods().filter(m=>m.name!==cur);
-  const show=(type==='expense')&&ems.length>0;
+  // 移動先には、残高を持つ方法（現金・口座・電子マネー）を並べる。
+  // 口座間の振替、ATMでの引き出し、電子マネーへのチャージが同じ仕組みで表せる。
+  // ありえないのは「自分自身への移動」だけなので、それだけ外す。
+  const dest=balanceMethods().filter(m=>m.name!==cur);
+  const show=(type==='expense')&&dest.length>0;
   $('fChargeField').hidden=!show;
   $('fChargeHint').hidden=!show;
   if(!show){$('fChargeTo').innerHTML='<option value=""></option>';return}
-  $('fChargeTo').innerHTML='<option value="">（チャージではない）</option>'+
-    ems.map(m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`).join('');
+  $('fChargeTo').innerHTML='<option value="">（移動ではない）</option>'+
+    dest.map(m=>`<option value="${esc(m.name)}" ${m.name===sel?'selected':''}>${esc(m.name)}</option>`).join('');
 }
 $('fMethod').onchange=()=>fillChargeSelect($('fChargeTo').value);
 function syncExpToggle(){
@@ -2215,7 +2228,7 @@ async function renderCalendar(){
   const byDay={};
   d.entries.filter(e=>e.date.slice(0,7)===mkey(cur)).forEach(e=>{
     const day=e.date, o=byDay[day]=byDay[day]||{out:0,inc:0};
-    if(e.type==='expense'){if(!isICPay(e))o.out+=total(e)}else o.inc+=total(e);
+    if(e.type==='expense'){if(countsAsSpend(e))o.out+=total(e)}else o.inc+=total(e);
   });
   const mOut=Object.values(byDay).reduce((s,o)=>s+o.out,0);
   const mInc=Object.values(byDay).reduce((s,o)=>s+o.inc,0);
@@ -2253,7 +2266,7 @@ async function renderCalDay(){
   const es=d.entries.filter(e=>e.date===calSelDay).sort(sortSameDay);
   const dt=new Date(calSelDay+'T00:00:00');
   const W=['日','月','火','水','木','金','土'];
-  const o=es.filter(e=>e.type==='expense'&&!isICPay(e)).reduce((s,e)=>s+total(e),0);
+  const o=es.filter(countsAsSpend).reduce((s,e)=>s+total(e),0);
   const ic=es.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
   box.innerHTML=`<div class="dayhead" style="padding:2px 4px 8px">
       <span>${dt.getMonth()+1}月${dt.getDate()}日(${W[dt.getDay()]})</span>
@@ -2407,11 +2420,28 @@ $('rateAdd').onclick=async()=>{
 let mmType='expense', mtEdit=null, mtKind='cash';
 const KIND={cash:'現金',bank:'口座',card:'カード',emoney:'電子マネー'};
 const KIND_OPTS={expense:['cash','bank','card','emoney'],income:['cash','bank','emoney']};
-/* チャージ式（残高を持つ）支払い方法か */
+/* チャージ式（前払い）の支払い方法か */
 const emoneyMethods=()=>methods('expense').filter(m=>m.kind==='emoney');
 const isEmoneyMethod=n=>!!n&&emoneyMethods().some(m=>m.name===n);
-/* ICで払った記録か（＝集計に入れない） */
+/* ICで払った記録か（＝集計に入れない。チャージ時に計上済みのため） */
 const isICPay=e=>e.type==='expense'&&isEmoneyMethod(e.method);
+/* 残高を持てる支払い方法（現金・口座・電子マネー）。カードは後払いなので持たない */
+const BAL_KINDS=['cash','bank','emoney'];
+const balanceMethods=()=>methods('expense').filter(m=>BAL_KINDS.includes(m.kind));
+const hasBalance=n=>!!n&&balanceMethods().some(m=>m.name===n);
+/* 残高の移動（口座間の振替、現金の引き出し、電子マネーへのチャージ）
+   移動先が残高を持つ方法なら、財布から出たお金ではないので集計に入れない */
+const isTransfer=e=>e.type==='expense'&&!!e.chargeTo&&hasBalance(e.chargeTo);
+/* 支出として集計に入れるか（支払いベース）
+   ・IC払い ：チャージ時に計上済みなので入れない
+   ・口座間の移動、引き出し：財布から出ていないので入れない
+   ・電子マネーへのチャージ：これは入れる（財布や口座から実際に出ているため） */
+const countsAsSpend=e=>{
+  if(e.type!=='expense')return false;
+  if(isICPay(e))return false;
+  if(e.chargeTo&&hasBalance(e.chargeTo)&&!isEmoneyMethod(e.chargeTo))return false;
+  return true;
+};
 $('mmSeg').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;
   mmType=b.dataset.type;
@@ -2459,6 +2489,10 @@ function openMethodSheet(m){
   const days=n=>Array.from({length:31},(_,i)=>`<option value="${i+1}" ${n===i+1?'selected':''}>${i+1}日</option>`).join('');
   $('mtClosing').innerHTML=days(m&&m.closingDay?m.closingDay:15);
   $('mtPay').innerHTML=days(m&&m.payDay?m.payDay:10);
+  // 引落し口座（口座・現金など残高を持つ方法から選ぶ）
+  const accs=balanceMethods();
+  $('mtPayFrom').innerHTML='<option value="">（指定しない）</option>'+
+    accs.map(a=>`<option value="${esc(a.name)}" ${m&&m.payFrom===a.name?'selected':''}>${esc(a.name)}</option>`).join('');
   updateMtCard();
   open($('methodSheet'));
 }
@@ -2478,7 +2512,7 @@ $('mtSave').onclick=async()=>{
   if(methods(mmType).some(m=>m.name===name&&m.name!==mtEdit)){toast('同じ名前があります');return}
   const kind=mtKind;
   const obj={name,kind};
-  if(kind==='card'){obj.closingDay=+$('mtClosing').value;obj.payDay=+$('mtPay').value}
+  if(kind==='card'){obj.closingDay=+$('mtClosing').value;obj.payDay=+$('mtPay').value;obj.payFrom=$('mtPayFrom').value||''}
   if(mtEdit){
     // 改名時は記録のmethodも追従
     if(name!==mtEdit){
@@ -2489,7 +2523,7 @@ $('mtSave').onclick=async()=>{
     const idx=meta.methods[mmType].findIndex(m=>m.name===mtEdit);
     meta.methods[mmType][idx]=obj;
   }else meta.methods[mmType].push(obj);
-  await saveMeta();closeAll();renderMethods();toast(mtEdit?'変更しました':'追加しました');
+  await saveMeta();closeAll();renderMethods();await render();toast(mtEdit?'変更しました':'追加しました');
 };
 $('mtDel').onclick=async()=>{
   let used=0;
@@ -2502,7 +2536,7 @@ $('mtDel').onclick=async()=>{
     d.entries.forEach(e=>{if(e.type===mmType&&e.method===mtEdit){e.method='';t=true}});
     return t;});
   meta.methods[mmType]=methods(mmType).filter(m=>m.name!==mtEdit);
-  await saveMeta();closeAll();renderMethods();toast('削除しました');
+  await saveMeta();closeAll();renderMethods();await render();toast('削除しました');
 };
 
 /* ---- カード請求ビュー ---- */
@@ -2569,25 +2603,45 @@ async function renderHomeBills(){
   const cards=methods('expense').filter(m=>m.kind==='card');
   $('homeBillCard').hidden=!cards.length;
   if(!cards.length)return;
-  const now=new Date();
-  if(!homeBillMonth)homeBillMonth={y:now.getFullYear(),m:now.getMonth()};
-  $('homeBillLabel').textContent=`${homeBillMonth.y}年${homeBillMonth.m+1}月 引き落とし`;
   const all=await allCardEntries();
-  $('homeBillList').innerHTML=cards.map(card=>{
-    const {start,end}=billPeriod(card,homeBillMonth.y,homeBillMonth.m);
-    const sum=billEntriesOf(all,card,homeBillMonth.y,homeBillMonth.m).reduce((s,e)=>s+total(e),0);
-    return `<button class="bill-row bill-tap" data-hcard="${esc(card.name)}">
-      <div><div class="bill-name">${esc(card.name)}</div>
-        <div class="bill-when">${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()}締め ・ ${homeBillMonth.m+1}月${card.payDay}日引落し</div></div>
-      <div class="bill-amt">${yen(sum)} <span class="bill-arrow">›</span></div>
-    </button>`;
-  }).join('');
-  $('homeBillList').querySelectorAll('[data-hcard]').forEach(b=>{
-    b.onclick=()=>openCardHistory(b.dataset.hcard,homeBillMonth.y,homeBillMonth.m);
+  const td=today();
+  // 各カードの引き落とし予定を集める（少し先まで）
+  const future=new Date();future.setMonth(future.getMonth()+3);
+  const limit=`${future.getFullYear()}-${String(future.getMonth()+1).padStart(2,'0')}-28`;
+  let plans=[];
+  cards.forEach(card=>{plans=plans.concat(payDates(card,all,limit))});
+  const unpaid=plans.filter(p=>p.date>td).sort((a,b)=>a.date<b.date?-1:1);
+  const paid=plans.filter(p=>p.date<=td).sort((a,b)=>a.date<b.date?1:-1).slice(0,3);
+  const total_=unpaid.reduce((s,p)=>s+p.amount,0);
+  const md2=s=>`${+s.slice(5,7)}/${+s.slice(8,10)}`;
+  $('homeBillList').innerHTML=`
+    <div class="bill-total">
+      <span>これから引き落とし</span>
+      <b class="num">${yen(total_)}</b>
+    </div>
+    ${unpaid.length?unpaid.map(p=>{
+      const days=Math.round((new Date(p.date)-new Date(td))/86400000);
+      const soon=days<=7;
+      return `<button class="bill-row bill-tap" data-plan="${esc(p.card)}|${p.date}">
+        <div><div class="bill-name">${esc(p.card)}</div>
+          <div class="bill-when ${soon?'soon':''}">${md2(p.date)} 引落し${soon?`（あと${days}日）`:''}</div></div>
+        <div class="bill-amt">${yen(p.amount)} <span class="bill-arrow">›</span></div>
+      </button>`;
+    }).join(''):'<p class="empty" style="padding:12px 0">引き落とし予定はありません</p>'}
+    ${paid.length?`<div class="bill-done-head">引き落とし済み</div>`+paid.map(p=>
+      `<button class="bill-row bill-tap bill-done" data-plan="${esc(p.card)}|${p.date}">
+        <div><div class="bill-name">${esc(p.card)}</div>
+          <div class="bill-when">${md2(p.date)} 引落し済み</div></div>
+        <div class="bill-amt">${yen(p.amount)} <span class="bill-arrow">›</span></div>
+      </button>`).join(''):''}
+  `;
+  $('homeBillList').querySelectorAll('[data-plan]').forEach(b=>{
+    const [name,date]=b.dataset.plan.split('|');
+    const y=+date.slice(0,4), m=+date.slice(5,7)-1;
+    b.onclick=()=>openCardHistory(name,y,m);
   });
 }
-$('homeBillPrev').onclick=()=>{homeBillMonth.m--;if(homeBillMonth.m<0){homeBillMonth.m=11;homeBillMonth.y--}renderHomeBills()};
-$('homeBillNext').onclick=()=>{homeBillMonth.m++;if(homeBillMonth.m>11){homeBillMonth.m=0;homeBillMonth.y++}renderHomeBills()};
+
 /* カード利用履歴シート */
 async function openCardHistory(cardName,y,m){
   const card=methodByName('expense',cardName);if(!card)return;
@@ -2957,7 +3011,7 @@ $('fxDel').onclick=async()=>{
 
 /* ホームのIC残高 */
 async function renderHomeIC(){
-  const ems=emoneyMethods();
+  const ems=balanceMethods();
   $('homeICCard').hidden=!ems.length;
   if(!ems.length)return;
   const all=await allEntriesAll();
@@ -2981,33 +3035,81 @@ async function allEntriesAll(){
   return out;
 }
 /* 残高 ＝ チャージ合計 − IC払い合計 ＋ 手動調整 */
-function icBalance(name,all){
+/* 残高 ＝ 入ってきた分 − 出ていった分 ＋ 手動調整
+   ・収入でその方法を選んだら増える
+   ・移動先に指定されたら増える（口座間の振替、引き出し、チャージ）
+   ・その方法で払ったら減る
+   ・カードの引き落とし日が来たら、引き落とし口座から減る */
+function icBalance(name,all,upto){
+  const until=upto||today();
   let bal=0;
   all.forEach(e=>{
-    if(e.type!=='expense')return;
-    if(e.chargeTo===name)bal+=total(e);      // チャージで増える
-    if(e.method===name)bal-=total(e);        // ICで払って減る
+    if(e.date>until)return;                  // 未来の記録は残高に含めない
+    if(e.type==='income'){
+      if(e.method===name)bal+=total(e);
+      return;
+    }
+    if(e.chargeTo===name)bal+=total(e);      // 移動・チャージで増える
+    if(e.method===name)bal-=total(e);        // その方法で払って減る
   });
+  bal-=cardWithdrawn(name,all,until);        // カードの引き落とし済み分
   const m=methodByName('expense',name);
   return bal+((m&&m.adjust)||0);
+}
+/* この口座から引き落とされたカード代金の合計（引き落とし日を過ぎた分だけ） */
+function cardWithdrawn(accountName,all,until){
+  let sum=0;
+  methods('expense').filter(m=>m.kind==='card'&&m.payFrom===accountName).forEach(card=>{
+    payDates(card,all,until).forEach(p=>{sum+=p.amount});
+  });
+  return sum;
+}
+/* カードの引き落とし予定を並べる。until を過ぎたものは done=true */
+function payDates(card,all,until){
+  const out=[];
+  if(!card.payDay)return out;
+  // 記録がある期間の前後を見て、引き落とし月を割り出す
+  const dates=all.filter(e=>e.type==='expense'&&e.method===card.name).map(e=>e.date).sort();
+  if(!dates.length)return out;
+  const first=new Date(dates[0]+'T00:00:00');
+  const lastD=new Date(until+'T00:00:00');
+  let y=first.getFullYear(), m=first.getMonth();
+  const endY=lastD.getFullYear(), endM=lastD.getMonth()+3;   // 先の予定も少し見る
+  let guard=0;
+  while(guard++<400){
+    if(y>endY||(y===endY&&m>endM))break;
+    const {start,end}=billPeriod(card,y,m);
+    const amount=all.filter(e=>{
+      if(e.type!=='expense'||e.method!==card.name)return false;
+      const d=new Date(e.date+'T00:00:00');
+      return d>=start&&d<=end;
+    }).reduce((s,e)=>s+total(e),0);
+    if(amount>0){
+      const day=Math.min(card.payDay,lastDay(y,m));
+      const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      out.push({date:iso,amount,done:iso<=until,card:card.name});
+    }
+    m++;if(m>11){m=0;y++}
+  }
+  return out;
 }
 function icEntriesOf(all,name){
   return all.filter(e=>e.type==='expense'&&(e.chargeTo===name||e.method===name))
     .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:sortSameDay(a,b));
 }
 async function renderIC(){
-  const ems=emoneyMethods();
+  const ems=balanceMethods();
   const box=$('icView');
   if(mmType!=='expense'||!ems.length){box.innerHTML='';return}
   const all=await allEntriesAll();
   box.innerHTML=`<div class="bill">
-    <p class="card-title">ICカードの残高</p>
+    <p class="card-title">残高</p>
     ${ems.map(m=>{
       const bal=icBalance(m.name,all);
       return `<button class="ic-row" data-ic="${esc(m.name)}">
         <div class="ic-main">
-          <div class="ic-nm">${esc(m.name)}</div>
-          <div class="ic-sub">チャージと利用から計算しています${m.adjust?'（調整あり）':''}</div>
+          <div class="ic-nm">${esc(m.name)}<span class="kind-badge kind-${m.kind}">${KIND[m.kind]}</span></div>
+          <div class="ic-sub">記録から計算しています${m.adjust?'（調整あり）':''}</div>
         </div>
         <span class="ic-bal ${bal<0?'minus':''}">${yen(bal)}</span>
         <span class="bill-arrow">›</span>
