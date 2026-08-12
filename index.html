@@ -337,7 +337,10 @@
     z-index:9;background:var(--card);border-radius:16px 16px 0 0;padding:6px 16px calc(20px + env(safe-area-inset-bottom));
     transition:transform .25s ease;max-height:90vh;overflow:auto;-webkit-overflow-scrolling:touch}
   .sheet.open{transform:translateX(-50%) translateY(0)}
-  .grab{width:36px;height:4px;background:var(--line);border-radius:9px;margin:6px auto 12px}
+  .grab{width:36px;height:4px;background:var(--line);border-radius:9px;margin:6px auto 12px;
+    position:relative;touch-action:none;cursor:grab}
+  /* 指で掴みやすいよう、見た目より広い当たり判定をつける */
+  .grab::after{content:'';position:absolute;left:-40px;right:-40px;top:-12px;bottom:-14px}
   .sheet h3{font-size:15px;margin:0 0 14px}
   .seg{display:flex;background:var(--bg);border-radius:9px;padding:3px;margin-bottom:14px}
   .seg button{flex:1;border:none;background:none;border-radius:7px;padding:9px 0;cursor:pointer;font-size:14px;color:var(--sub)}
@@ -951,7 +954,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v5';
+const APP_VERSION='v6';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -959,7 +962,10 @@ const APP_VERSION='v5';
    改修したら、いちばん上の版の items の先頭に1行足す。
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
-  {ver:'v6', released:'', items:[
+  {ver:'v7', released:'', items:[
+  ]},
+  {ver:'v6', released:'2026-08-12', items:[
+    ['v5.1','バックアップ日をその場で更新。シートを下にスワイプして閉じられるように'],
   ]},
   {ver:'v5', released:'2026-08-11', items:[
     ['v4.7','お金・カードの追加と編集ができない不具合を修正'],
@@ -1705,7 +1711,48 @@ const open=el=>{
   document.querySelectorAll('.sheet').forEach(s=>{if(s!==el)s.classList.remove('open')});
   el.classList.add('open');$('scrim').classList.add('open');
 };
-const closeAll=()=>{document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));$('scrim').classList.remove('open')};
+const closeAll=()=>{
+  document.querySelectorAll('.sheet').forEach(s=>{s.classList.remove('open');s.style.transform=''});
+  $('scrim').classList.remove('open');
+};
+/* シート上部のつまみを下にスワイプして閉じられるようにする */
+(function enableSheetSwipe(){
+  let sheet=null, startY=0, dy=0;
+  const pointY=ev=>ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY;
+  function begin(ev){
+    const g=ev.target.closest('.grab');if(!g)return;
+    sheet=g.closest('.sheet');if(!sheet)return;
+    startY=pointY(ev);dy=0;
+    sheet.style.transition='none';
+    ev.preventDefault();
+  }
+  function move(ev){
+    if(!sheet)return;
+    dy=Math.max(0,pointY(ev)-startY);          // 下方向だけ動かす
+    sheet.style.transform=`translateX(-50%) translateY(${dy}px)`;
+    ev.preventDefault();
+  }
+  function end(){
+    if(!sheet)return;
+    const el=sheet;sheet=null;
+    el.style.transition='';
+    if(dy>90){                                  // 十分に引き下げたら閉じる
+      // 下へ滑らせたまま閉じる（いったん元に戻る動きを見せない）
+      el.style.transform='translateX(-50%) translateY(100%)';
+      $('scrim').classList.remove('open');
+      setTimeout(()=>{el.classList.remove('open');el.style.transform=''},250);
+    }else{
+      el.style.transform='';                    // 戻す
+    }
+  }
+  document.addEventListener('touchstart',begin,{passive:false});
+  document.addEventListener('touchmove',move,{passive:false});
+  document.addEventListener('touchend',end);
+  document.addEventListener('touchcancel',end);
+  document.addEventListener('mousedown',begin);
+  document.addEventListener('mousemove',move);
+  document.addEventListener('mouseup',end);
+})();
 $('monthLabel').onclick=async()=>{
   const now=new Date().getFullYear();
   const ys=[...new Set([...meta.years,now,Y()])];
@@ -3539,6 +3586,7 @@ async function afterBackup(msg,doneYears){
   // 書き出した年だけ、その時点の件数を記録する
   (doneYears||Object.keys(counts).map(Number)).forEach(y=>{meta.lastBackupCounts[y]=counts[y]||0});
   await saveMeta();
+  renderYears();          // 「最後のバックアップ」の表示をその場で更新する
   await updateBackupBar();
   toast(msg);
 }
