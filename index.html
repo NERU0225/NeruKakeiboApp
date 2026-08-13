@@ -202,6 +202,7 @@
   .bill-total span{font-size:12px;color:var(--sub)}
   .bill-total b{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
   .bill-when.soon{color:var(--red)}
+  .bill-in{color:var(--blue)}
   .bill-done-head{font-size:11px;color:var(--sub);padding:12px 0 2px;
     border-top:1px solid var(--line);margin-top:8px}
   .bill-done{opacity:.55}
@@ -954,7 +955,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v6';
+const APP_VERSION='v6.3';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -963,6 +964,9 @@ const APP_VERSION='v6';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v7', released:'', items:[
+    ['v6.3','カレンダーで返金と支出が相殺されない不具合を修正'],
+    ['v6.2','カード請求が返金で上回るとき「入金」と表示。カレンダーは返金を増えた側にまとめて表示'],
+    ['v6.1','返金などで金額がマイナスのとき、記号が二重に出る表示を修正'],
   ]},
   {ver:'v6', released:'2026-08-12', items:[
     ['v5.1','バックアップ日をその場で更新。シートを下にスワイプして閉じられるように'],
@@ -1193,6 +1197,20 @@ const yen=n=>'¥'+Math.round(Number(n)||0).toLocaleString('ja-JP');
 /* 残高・カード請求は人に見られたくないことがあるので伏せられるようにする */
 var hideAmounts=false;   // 金額を伏せるか（起動時に設定から読み込む）
 const yenMask=n=>hideAmounts?'¥•••••':yen(n);
+/* 符号つきで表示する。返金などで金額がマイナスのとき、記号が二重にならないようにする
+   支出 1000 → −¥1,000 ／ 支出 -4000（返金）→ +¥4,000
+   収入 5000 → +¥5,000 ／ 収入 -500（取消）  → −¥500 */
+/* カード請求の表示。返金が上回ると口座に入金されるので、そう分かるようにする */
+function billLabel(n){
+  const v=Math.round(Number(n)||0);
+  if(v<0)return {text:'入金 '+yenMask(-v),minus:true};
+  return {text:yenMask(v),minus:false};
+}
+function yenSigned(n,isIncome){
+  const v=Math.round(Number(n)||0);
+  const plus=isIncome?v>=0:v<0;      // 手元にお金が増える向きか
+  return (plus?'+':'−')+'¥'+Math.abs(v).toLocaleString('ja-JP');
+}
 const mkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let toastTimer=null;
@@ -1505,7 +1523,7 @@ function groupHTML(es){
     return `<div class="daygroup">
       <div class="dayhead">
         <span>${dt.getMonth()+1}月${dt.getDate()}日(${W[dt.getDay()]})</span>
-        <span class="num">${sum?'支出 '+yen(sum):''}</span>
+        <span class="num">${sum?(sum<0?'返金 ¥'+Math.abs(sum).toLocaleString('ja-JP'):'支出 '+yen(sum)):''}</span>
       </div>
       <div class="items">${g[date].map(itemHTML).join('')}</div>
     </div>`;
@@ -1528,7 +1546,7 @@ function itemHTML(e){
       <span class="i-title">${expBadge}${icBadge}${chBadge}${esc(e.store||uniq[0]||'（店名なし）')}${e.items.length>1?`<span class="badge">${e.items.length}件</span>`:''}</span>
       <span class="i-sub">${e.from||e.to?esc((e.from||'?')+' → '+(e.to||'?'))+' ・ ':''}${esc(sub)}${e.memo?' ・ '+esc(e.memo):''}</span>
     </span>
-    <span class="i-amt num ${e.type==='expense'?'out':'in'}">${e.type==='expense'?'−':'+'}${yen(total(e)).slice(1)}</span>
+    <span class="i-amt num ${(e.type==='expense')===(total(e)>=0)?'out':'in'}">${yenSigned(total(e),e.type!=='expense')}</span>
   </button>`;
 }
 
@@ -2406,11 +2424,21 @@ async function renderCalendar(){
   const byDay={};
   d.entries.filter(e=>e.date.slice(0,7)===mkey(cur)).forEach(e=>{
     const day=e.date, o=byDay[day]=byDay[day]||{out:0,inc:0};
-    if(e.type==='expense'){if(countsAsSpend(e))o.out+=total(e)}else o.inc+=total(e);
+    if(e.type==='expense'){
+      if(countsAsSpend(e))o.out+=total(e);   // 返金はマイナスのまま足す
+    }else o.inc+=total(e);
   });
-  const mOut=Object.values(byDay).reduce((s,o)=>s+o.out,0);
-  const mInc=Object.values(byDay).reduce((s,o)=>s+o.inc,0);
-  $('calSum').innerHTML=`${y}年${mo+1}月　支出 <b class="o">${yen(mOut)}</b>　収入 <b class="i">${yen(mInc)}</b>`;
+  // 支出を差し引きで確定させてから振り分ける。
+  // 返金が支出を上回った日は、その差額を「増えた側」に回す
+  Object.values(byDay).forEach(o=>{
+    if(o.out<0){o.inc+=-o.out;o.out=0}
+  });
+  // 月の合計は、月ぜんぶを差し引きしてから出す（日ごとに丸めた値を足すとずれるため）
+  const mEs=d.entries.filter(e=>e.date.slice(0,7)===mkey(cur));
+  const mOut=mEs.filter(countsAsSpend).reduce((s,e)=>s+total(e),0);
+  const mInc=mEs.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
+  const mOutLabel=mOut<0?`返金 <b class="i">${yen(-mOut)}</b>`:`支出 <b class="o">${yen(mOut)}</b>`;
+  $('calSum').innerHTML=`${y}年${mo+1}月　${mOutLabel}　収入 <b class="i">${yen(mInc)}</b>`;
 
   const first=new Date(y,mo,1).getDay();
   const days=new Date(y,mo+1,0).getDate();
@@ -2448,7 +2476,7 @@ async function renderCalDay(){
   const ic=es.filter(e=>e.type==='income').reduce((s,e)=>s+total(e),0);
   box.innerHTML=`<div class="dayhead" style="padding:2px 4px 8px">
       <span>${dt.getMonth()+1}月${dt.getDate()}日(${W[dt.getDay()]})</span>
-      <span class="num">${o?'支出 '+yen(o):''}${o&&ic?'　':''}${ic?'収入 '+yen(ic):''}</span>
+      <span class="num">${o?(o<0?'返金 ¥'+Math.abs(o).toLocaleString('ja-JP'):'支出 '+yen(o)):''}${o&&ic?'　':''}${ic?'収入 '+yen(ic):''}</span>
     </div>`+
     (es.length?`<div class="items sortable" id="calDayItems">${es.map(e=>
         `<div class="sort-row" data-sid="${e.id}">
@@ -2830,7 +2858,7 @@ async function renderBills(){
     </div>
     ${rows.map(r=>`<button class="bill-row bill-tap" data-card="${esc(r.name)}">
       <div><div class="bill-name">${esc(r.name)}</div><div class="bill-when">${r.period} ・ ${billMonth.m+1}月${r.payDay}日引落し</div></div>
-      <div class="bill-amt">${yen(r.sum)} <span class="bill-arrow">›</span></div>
+      <div class="bill-amt${r.sum<0?' bill-in':''}">${billLabel(r.sum).text} <span class="bill-arrow">›</span></div>
     </button>`).join('')}
   </div>`;
   $('billPrev').onclick=()=>{billMonth.m--;if(billMonth.m<0){billMonth.m=11;billMonth.y--}renderBills()};
@@ -2864,7 +2892,7 @@ async function renderHomeBills(){
   const remain=rows.filter(r=>!r.done).reduce((s,r)=>s+r.sum,0);
   $('homeBillList').innerHTML=`
     <div class="bill-total">
-      <span>この月の未払い</span><b class="num">${yenMask(remain)}</b>
+      <span>${remain<0?'この月の入金':'この月の未払い'}</span><b class="num${remain<0?' bill-in':''}">${remain<0?yenMask(-remain):yenMask(remain)}</b>
     </div>
     ${rows.map(r=>{
       const soon=!r.done&&r.days<=7;
@@ -2873,7 +2901,7 @@ async function renderHomeBills(){
       return `<button class="bill-row bill-tap ${r.done?'bill-done':''}" data-hcard="${esc(r.card.name)}">
         <div><div class="bill-name">${esc(r.card.name)}</div>
           <div class="bill-when ${soon?'soon':''}">${r.period} ・ ${when}</div></div>
-        <div class="bill-amt">${yenMask(r.sum)} <span class="bill-arrow">›</span></div>
+        <div class="bill-amt${r.sum<0?' bill-in':''}">${billLabel(r.sum).text} <span class="bill-arrow">›</span></div>
       </button>`;
     }).join('')}`;
   $('homeBillList').querySelectorAll('[data-hcard]').forEach(b=>{
