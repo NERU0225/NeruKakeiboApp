@@ -156,6 +156,20 @@
   .bill-tap:active{background:var(--bg)}
   .bill-arrow{color:var(--sub);font-size:14px;margin-left:2px}
   .sheet-tall{max-height:88vh}
+  .tpl-open{width:100%;background:var(--bg);border:1px dashed var(--line);border-radius:9px;
+    color:var(--blue);font-size:14px;padding:11px;cursor:pointer;margin-bottom:12px;font-family:var(--font)}
+  .tpl-btns{display:flex;gap:8px;margin-top:14px}
+  .tpl-btn{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:9px;
+    color:var(--sub);font-size:12px;padding:10px 6px;cursor:pointer;font-family:var(--font)}
+  .tpl-btn:active{background:var(--card)}
+  .tpl-row{display:flex;align-items:center;gap:10px;padding:12px 2px;border-top:1px solid var(--line);
+    width:100%;background:none;text-align:left;cursor:pointer;color:inherit;font-family:var(--font)}
+  .tpl-row:first-child{border-top:none}
+  .tpl-row:active{background:var(--bg)}
+  .tpl-main{flex:1;min-width:0}
+  .tpl-nm{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tpl-meta{font-size:11px;color:var(--sub);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tpl-amt{flex:none;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
   .fx-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
   .fx-row:first-child{border-top:none}
   .fx-main{flex:1;min-width:0}
@@ -626,6 +640,7 @@
         <button type="button" data-set="cat" aria-pressed="true">カテゴリ</button>
         <button type="button" data-set="money" aria-pressed="false">お金</button>
         <button type="button" data-set="method" aria-pressed="false">カード</button>
+        <button type="button" data-set="tpl" aria-pressed="false">定型</button>
         <button type="button" data-set="fixed" aria-pressed="false">固定費</button>
         <button type="button" data-set="tax" aria-pressed="false">税率</button>
       </div>
@@ -654,6 +669,12 @@
         <div id="mmList"></div>
         <button class="addcat" id="addMethod">＋ 追加</button>
         <div id="billView"></div>
+      </div>
+
+      <div class="card" id="setTplCard" hidden>
+        <p class="card-title">テンプレート</p>
+        <p class="hint" style="margin-bottom:12px">よく買う組み合わせを登録しておくと、入力画面の「テンプレから入力」で呼び出せます。登録は入力画面の「テンプレとして保存」から。</p>
+        <div id="tplList"></div>
       </div>
 
       <div class="card" id="setFixedCard" hidden>
@@ -716,6 +737,7 @@
     <button type="button" data-type="expense" aria-pressed="true">支出</button>
     <button type="button" data-type="income" aria-pressed="false">収入</button>
   </div>
+  <button type="button" class="tpl-open" id="tplOpenBtn" hidden>☆ テンプレから入力</button>
   <div class="field" style="position:relative"><label for="fStore" id="storeLabel">店名</label><input type="text" id="fStore" placeholder="セブンイレブン" maxlength="30" autocomplete="off"></div>
   <div class="suggest" id="storeSuggest" hidden></div>
   <div class="field"><label for="fDate">日付</label><input type="date" id="fDate"></div>
@@ -763,6 +785,21 @@
   <div id="expDatesWrap" hidden>
     <div class="field"><label for="fClaimDate">申請日</label><input type="date" id="fClaimDate"></div>
     <div class="field"><label for="fSettleDate">精算日</label><input type="date" id="fSettleDate"></div>
+  </div>
+  <div class="tpl-btns">
+    <button type="button" class="tpl-btn" id="tplSaveBtn">テンプレとして保存</button>
+    <button type="button" class="tpl-btn" id="tplUpdateBtn" hidden>テンプレを更新</button>
+  </div>
+  <p class="hint" id="tplFromHint" hidden style="margin:6px 2px 0"></p>
+  <div id="tplNameBox" hidden style="margin-top:10px">
+    <div class="field" style="border:none;padding:0 0 8px">
+      <label for="tplNameInput">名前</label>
+      <input type="text" id="tplNameInput" placeholder="例：セブン（アイスコーヒー）" maxlength="30" style="flex:1">
+    </div>
+    <div class="actions" style="margin:0">
+      <button class="btn btn-sub" id="tplNameCancel">やめる</button>
+      <button class="btn btn-primary" id="tplNameOk">決定</button>
+    </div>
   </div>
   <div class="actions">
     <button class="btn btn-ghost" id="del" hidden>削除</button>
@@ -827,6 +864,23 @@
     </div>
   </div>
   <div id="cardHistList"></div>
+</div>
+
+<div class="sheet" id="askSheet" role="dialog" aria-modal="true" aria-label="確認">
+  <div class="grab"></div>
+  <h3 id="askTitle">確認</h3>
+  <p class="hint" id="askText" style="margin:-4px 0 14px;line-height:1.6"></p>
+  <div class="actions">
+    <button class="btn btn-sub" id="askNo">やめる</button>
+    <button class="btn btn-primary" id="askYes">実行する</button>
+  </div>
+</div>
+
+<div class="sheet sheet-tall" id="tplPickSheet" role="dialog" aria-modal="true" aria-label="テンプレから入力">
+  <div class="grab"></div>
+  <h3>テンプレから入力</h3>
+  <p class="hint" style="margin:-6px 0 12px">選ぶと、店名・支払い・明細がそのまま入ります。金額は後から直せます。</p>
+  <div id="tplPickList"></div>
 </div>
 
 <div class="sheet sheet-tall" id="verSheet" role="dialog" aria-modal="true" aria-label="バージョン履歴">
@@ -955,7 +1009,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v7';
+const APP_VERSION='v7.3';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -964,6 +1018,9 @@ const APP_VERSION='v7';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v8', released:'', items:[
+    ['v7.3','削除などの確認を画面内で行うように（環境によって確認が出ず無反応になっていた）'],
+    ['v7.2','テンプレート機能を追加。よく買う組み合わせを登録して呼び出せるように'],
+    ['v7.1','品名の候補で、入力中の店での直近の金額を出すように'],
   ]},
   {ver:'v7', released:'2026-08-13', items:[
     ['v6.3','カレンダーで返金と支出が相殺されない不具合を修正'],
@@ -1134,12 +1191,14 @@ function buildSuggestIndex(){
     if(e.store)sc[e.store]=(sc[e.store]||0)+1;
     (e.items||[]).forEach(i=>{
       if(!i.name)return;
-      const cur=nc[i.name]||{name:i.name,count:0};
+      const cur=nc[i.name]||{name:i.name,count:0,byStore:{}};
       cur.count++;
+      const info={amount:i.amount,qty:i.qty||1,category:i.category,sub:i.sub||'',
+        taxIn:i.taxIn!==false,rate:i.rate||defaultRate(),store:e.store||'',type:e.type};
       // 後の記録ほど新しいので上書き＝直近の値が残る
-      cur.amount=i.amount;cur.qty=i.qty||1;cur.category=i.category;cur.sub=i.sub||'';
-      cur.taxIn=i.taxIn!==false;cur.rate=i.rate||defaultRate();cur.store=e.store||'';
-      cur.type=e.type;
+      Object.assign(cur,info);
+      // 同じ品でも店で値段が違うので、店ごとの直近も覚えておく
+      if(e.store)cur.byStore[e.store]={...info};
       nc[i.name]=cur;
     });
   });
@@ -1216,6 +1275,23 @@ function yenSigned(n,isIncome){
 const mkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let toastTimer=null;
+/* 確認ダイアログ。OSのconfirmはサンドボックス環境で無反応になることがあるため、
+   画面内のシートで聞く。使う側は await ask('…') と書く */
+let askResolve=null;
+function ask(text,okLabel){
+  return new Promise(res=>{
+    askResolve=res;
+    $('askText').textContent=text;
+    $('askYes').textContent=okLabel||'実行する';
+    open($('askSheet'));
+  });
+}
+function askClose(v){
+  const r=askResolve;askResolve=null;
+  $('askSheet').classList.remove('open');
+  $('scrim').classList.remove('open');
+  if(r)r(v);
+}
 const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1900)};
 const cats=t=>(meta.cats&&meta.cats[t])||[];
@@ -1564,6 +1640,7 @@ function showTab(n){
   if(n==='set'){                       // 開いていたカードを最新に描き直す
     if(!$('setMoneyCard').hidden)renderMoney();
     if(!$('setMethodCard').hidden)renderMethods();
+    if(!$('setTplCard').hidden)renderTemplates();
     if(!$('setFixedCard').hidden)renderFixed();
     if(!$('setTaxCard').hidden)renderRates();
   }
@@ -1848,6 +1925,12 @@ function refreshSub(i){
   const el=$('lines').querySelector(`[data-subtotal="${i}"]`);
   if(el)el.textContent=yen(lineSub(lines[i]));
 }
+/* 入力中の店名に合わせて、その品の直近情報を返す。
+   その店での記録がなければ、店を問わない直近を使う */
+function infoForStore(o,store){
+  if(o&&store&&o.byStore&&o.byStore[store])return o.byStore[store];
+  return o;
+}
 function showNameSuggest(i){
   const inp=$('lines').querySelector(`.nm[data-i="${i}"]`);
   const box=$('lines').querySelector(`.nm-suggest[data-sgi="${i}"]`);
@@ -1855,13 +1938,17 @@ function showNameSuggest(i){
   const q=inp.value;
   const list=matchNameSuggest(q,lines[i].category);
   if(!list.length){box.hidden=true;return}
+  const curStore=$('fStore').value.trim();
   box.innerHTML=list.map(o=>{
-    const catLabel=o.category+(o.sub?' › '+o.sub:'');
-    const match=o.category===lines[i].category;
+    const d=infoForStore(o,curStore);              // その店での直近を優先
+    const sameStore=!!(curStore&&o.byStore&&o.byStore[curStore]);
+    const catLabel=d.category+(d.sub?' › '+d.sub:'');
+    const match=d.category===lines[i].category;
     return `<button type="button" data-nm="${esc(o.name)}" data-row="${i}">
       <span class="sg-main">${hilite(o.name,q)}
         <span class="sg-cat${match?' hit':''}">${esc(catLabel)}</span></span>
-      <span class="sg-sub">${yen(o.amount||0)}${o.taxIn===false?' 税抜':''}</span>
+      <span class="sg-sub">${yen(d.amount||0)}${d.taxIn===false?' 税抜':''}${
+        sameStore?'':(d.store?`<br><span class="sg-note">${esc(d.store)}</span>`:'')}</span>
     </button>`;
   }).join('');
   box.hidden=false;
@@ -1908,12 +1995,14 @@ $('lines').addEventListener('click',e=>{
     const l=lines[i];
     l.name=sg.dataset.nm;
     if(o){
-      l.amount=o.amount;                                   // 直近の金額で上書き
-      if(cats(type).some(c=>c.name===o.category)){         // カテゴリが今も存在するなら
-        l.category=o.category;
-        l.sub=(o.sub&&subsOf(type,o.category).includes(o.sub))?o.sub:'';
+      // 入力中の店での直近を優先する（同じ品でも店で値段が違うため）
+      const d=infoForStore(o,$('fStore').value.trim());
+      l.amount=d.amount;
+      if(cats(type).some(c=>c.name===d.category)){         // カテゴリが今も存在するなら
+        l.category=d.category;
+        l.sub=(d.sub&&subsOf(type,d.category).includes(d.sub))?d.sub:'';
       }
-      l.taxIn=o.taxIn;l.rate=o.rate;
+      l.taxIn=d.taxIn;l.rate=d.rate;
     }
     hideNameSuggest(i);
     drawLines();return}
@@ -1935,6 +2024,7 @@ $('typeSeg').onclick=e=>{
   $('methodLabel').textContent=type==='expense'?'支払い':'経路';
   lines.forEach(l=>{if(!cats(type).some(c=>c.name===l.category))l.category=(cats(type)[0]||FALLBACK).name});
   fillMethodSelect('');fillChargeSelect('');
+  syncTplButtons();
   if(type==='income'){entryExpense=false;syncExpToggle()}
   $('expToggleWrap').style.display=type==='expense'?'':'none';
   drawLines();
@@ -2012,6 +2102,9 @@ function openSheet(e,presetDate){
   $('expToggleWrap').style.display=type==='expense'?'':'none';
   buildSuggestIndex();
   $('storeSuggest').hidden=true;
+  tplFrom=null;                       // 新しく開いたので、更新の対象はなし
+  $('tplNameBox').hidden=true;
+  syncTplButtons();
   drawLines();open($('sheet'));
 }
 /* ---- 店名サジェスト ---- */
@@ -2023,12 +2116,22 @@ function showStoreSuggest(){
   box.hidden=false;
 }
 $('fStore').addEventListener('focus',showStoreSuggest);
-$('fStore').addEventListener('input',showStoreSuggest);
+$('fStore').addEventListener('input',()=>{
+  showStoreSuggest();
+  refreshOpenNameSuggests();   // 店が変わると出す金額も変わるため
+});
+/* 開いている品名候補を出し直す */
+function refreshOpenNameSuggests(){
+  $('lines').querySelectorAll('.nm-suggest').forEach(b=>{
+    if(!b.hidden)showNameSuggest(+b.dataset.sgi);
+  });
+}
 $('fStore').addEventListener('blur',()=>setTimeout(()=>{$('storeSuggest').hidden=true},150));
 $('storeSuggest').addEventListener('mousedown',e=>e.preventDefault());
 $('storeSuggest').addEventListener('click',e=>{
   const b=e.target.closest('[data-store]');if(!b)return;
   $('fStore').value=b.dataset.store;$('storeSuggest').hidden=true;
+  refreshOpenNameSuggests();
 });
 
 /* ---- 区間（出発・到着） ---- */
@@ -2143,7 +2246,9 @@ $('fab').onclick=()=>{
   const preset=(!$('tab-cal').hidden&&calSelDay)?calSelDay:null;
   openSheet(null,preset);
 };
-$('scrim').onclick=closeAll;
+$('askYes').onclick=()=>askClose(true);
+$('askNo').onclick=()=>askClose(false);
+$('scrim').onclick=()=>{if(askResolve)askClose(false);else closeAll()};
 document.onkeydown=e=>{if(e.key==='Escape')closeAll()};
 document.body.addEventListener('click',async e=>{
   const b=e.target.closest('.item');if(!b)return;
@@ -2219,6 +2324,166 @@ function openDetail(en){
 }
 $('dtClose').onclick=closeAll;
 $('dtEdit').onclick=()=>{if(detailEntry)openSheet(detailEntry)};
+/* ============ テンプレート ============
+   同じ店で同じ買い物を繰り返すとき用。1レシートまるごとを覚える。 */
+const tplList=()=>meta.templates||(meta.templates=[]);
+let tplFrom=null;               // 呼び出したテンプレのid（更新ボタンの対象）
+
+/* 今の入力内容をテンプレの形にする */
+function currentAsTemplate(){
+  return {
+    type,
+    store:$('fStore').value.trim(),
+    method:$('fMethod').value||'',
+    chargeTo:$('fChargeTo').value||'',
+    memo:$('fMemo').value.trim(),
+    expense:entryExpense,
+    items:lines.map(l=>({
+      name:(l.name||'').trim(),category:l.category,sub:l.sub||'',
+      amount:Math.floor(Number(l.amount)||0),qty:Math.max(1,Math.floor(Number(l.qty)||1)),
+      taxIn:l.taxIn!==false,rate:l.taxIn===false?(+l.rate||defaultRate()):undefined
+    })).filter(i=>i.name||i.amount)
+  };
+}
+/* テンプレの合計（表示用） */
+const tplTotal=t=>(t.items||[]).reduce((s,i)=>s+Math.round((i.amount||0)*(i.qty||1)),0);
+
+/* 一覧に出す説明 */
+function tplSubText(t){
+  const names=(t.items||[]).map(i=>i.name).filter(Boolean);
+  const parts=[];
+  if(t.store)parts.push(t.store);
+  if(names.length)parts.push(names.slice(0,3).join('・')+(names.length>3?' ほか':''));
+  if(t.method)parts.push(t.method);
+  return parts.join(' ・ ');
+}
+/* 入力画面のボタンの出し分け */
+function syncTplButtons(){
+  const has=tplList().length>0;
+  $('tplOpenBtn').hidden=!has||!!editId;      // 記録の編集中は出さない
+  const t=tplFrom?tplList().find(x=>x.id===tplFrom):null;
+  $('tplUpdateBtn').hidden=!t;
+  $('tplFromHint').hidden=!t;
+  if(t)$('tplFromHint').textContent=`「${t.name}」から入力しました`;
+}
+/* 呼び出し */
+$('tplOpenBtn').onclick=()=>{
+  const l=tplList().filter(t=>t.type===type);
+  $('tplPickList').innerHTML=l.length?l.map(t=>`
+    <button class="tpl-row" data-tpl="${t.id}">
+      <div class="tpl-main">
+        <div class="tpl-nm">${esc(t.name)}</div>
+        <div class="tpl-meta">${esc(tplSubText(t))}</div>
+      </div>
+      <span class="tpl-amt">${yen(tplTotal(t))}</span>
+    </button>`).join('')
+    :'<p class="empty">このタイプのテンプレはまだありません</p>';
+  open($('tplPickSheet'));
+};
+$('tplPickList').onclick=e=>{
+  const b=e.target.closest('[data-tpl]');if(!b)return;
+  const t=tplList().find(x=>x.id===+b.dataset.tpl);if(!t)return;
+  applyTemplate(t);
+  closeAll();
+  open($('sheet'));
+};
+/* テンプレを入力欄に流し込む */
+function applyTemplate(t){
+  tplFrom=t.id;
+  type=t.type||'expense';
+  [...$('typeSeg').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.type===type));
+  $('storeLabel').textContent=type==='expense'?'店名':'内容';
+  $('methodLabel').textContent=type==='expense'?'支払い':'経路';
+  $('fStore').value=t.store||'';
+  $('fMemo').value=t.memo||'';
+  fillMethodSelect(t.method||'');
+  fillChargeSelect(t.chargeTo||'');
+  entryExpense=(type==='expense')&&!!t.expense;
+  editStatus=null;
+  syncExpToggle();
+  $('expToggleWrap').style.display=type==='expense'?'':'none';
+  lines=(t.items||[]).map(i=>({
+    name:i.name||'',amount:i.amount||'',qty:i.qty||1,
+    category:cats(type).some(c=>c.name===i.category)?i.category:(cats(type)[0]||FALLBACK).name,
+    sub:i.sub||'',taxIn:i.taxIn!==false,rate:i.rate||defaultRate()
+  }));
+  if(!lines.length)lines=[blank()];
+  drawLines();syncTplButtons();
+}
+/* 名前を入れてもらう小さな入力欄（prompt は使えない環境があるため画面内で聞く） */
+function askTplName(defaultName,onOk){
+  const box=$('tplNameBox');
+  $('tplNameInput').value=defaultName||'';
+  box.hidden=false;
+  $('tplNameOk').onclick=()=>{
+    const v=$('tplNameInput').value.trim();
+    if(!v){toast('名前を入れてください');return}
+    box.hidden=true;onOk(v);
+  };
+  $('tplNameCancel').onclick=()=>{box.hidden=true};
+  $('tplNameInput').focus();
+}
+$('tplSaveBtn').onclick=()=>{
+  const t=currentAsTemplate();
+  if(!t.items.length){toast('明細を入力してください');return}
+  const first=(t.items[0]||{}).name||'';
+  const def=t.store?(first?t.store+'（'+first+'）':t.store):first;
+  askTplName(def,async name=>{
+    tplList().push({id:Date.now(),name,...t});
+    await saveMeta();
+    tplFrom=null;syncTplButtons();renderTemplates();
+    toast('テンプレに保存しました');
+  });
+};
+$('tplUpdateBtn').onclick=async()=>{
+  const t=currentAsTemplate();
+  if(!t.items.length){toast('明細を入力してください');return}
+  const idx=tplList().findIndex(x=>x.id===tplFrom);
+  if(idx<0){toast('もとのテンプレが見つかりません');return}
+  const name=tplList()[idx].name;
+  tplList()[idx]={id:tplFrom,name,...t};
+  await saveMeta();renderTemplates();
+  toast(`「${name}」を更新しました`);
+};
+
+/* 設定タブの管理画面 */
+function renderTemplates(){
+  const l=tplList();
+  $('tplList').innerHTML=l.length?l.map((t,i)=>`
+    <div class="mrow sort-row" data-sid="${esc(String(t.id))}">
+      <span class="sort-handle" aria-label="並べ替え">≡</span>
+      <div style="flex:1;min-width:0">
+        <span class="cname">${esc(t.name)}${t.type==='income'?'<span class="kind-badge kind-bank">収入</span>':''}</span>
+        <div class="mm-sub">${esc(tplSubText(t))} ・ ${yen(tplTotal(t))}</div>
+      </div>
+      <button class="edit" data-tpled="${i}">名前</button>
+      <button class="move" data-tpldel="${i}" aria-label="削除">✕</button>
+    </div>`).join('')
+    :'<p class="empty">入力画面の「テンプレとして保存」から登録できます</p>';
+  if(l.length)makeSortable($('tplList'),async ids=>{
+    const a=tplList();
+    meta.templates=ids.map(id=>a.find(t=>String(t.id)===id)).filter(Boolean);
+    await saveMeta();renderTemplates();
+  });
+}
+$('tplList').onclick=async e=>{
+  const ed=e.target.closest('[data-tpled]');
+  if(ed){
+    const t=tplList()[+ed.dataset.tpled];if(!t)return;
+    askTplName(t.name,async name=>{
+      t.name=name;await saveMeta();renderTemplates();toast('名前を変えました');
+    });
+    return;
+  }
+  const del=e.target.closest('[data-tpldel]');
+  if(del){
+    const t=tplList()[+del.dataset.tpldel];if(!t)return;
+    if(!await ask(`「${t.name}」を削除します。`,'削除する'))return;
+    meta.templates=tplList().filter(x=>x.id!==t.id);
+    await saveMeta();renderTemplates();toast('削除しました');
+  }
+};
+
 $('saveBtn').onclick=async()=>{
   const date=$('fDate').value;
   if(!date){toast('日付を入力してください');return}
@@ -2586,10 +2851,12 @@ $('setNav').onclick=e=>{
   $('setCatCard').hidden=v!=='cat';
   $('setMoneyCard').hidden=v!=='money';
   $('setMethodCard').hidden=v!=='method';
+  $('setTplCard').hidden=v!=='tpl';
   $('setFixedCard').hidden=v!=='fixed';
   $('setTaxCard').hidden=v!=='tax';
   if(v==='money')renderMoney();
   if(v==='method')renderMethods();
+  if(v==='tpl')renderTemplates();
   if(v==='fixed')renderFixed();
   if(v==='tax')renderRates();
 };
@@ -2611,7 +2878,7 @@ $('rateList').onclick=async e=>{
   if(del){
     const r=+del.dataset.rdel;
     if(rates().length<=1){toast('少なくとも1つは必要です');return}
-    if(!confirm(`${r}% を削除します。よろしいですか？（過去の記録の税率は変わりません）`))return;
+    if(!await ask(`${r}% を削除します。過去の記録の税率は変わりません。`,'削除する'))return;
     meta.rates=rates().filter(x=>x!==r);
     if(defaultRate()===r)meta.defaultRate=meta.rates[0];
     await saveMeta();renderRates();toast('削除しました');
@@ -2781,8 +3048,8 @@ $('mtDel').onclick=async()=>{
   let used=0;
   for(const y of meta.years){const d=await year(y);
     d.entries.forEach(e=>{if(e.method===mtEdit||e.chargeTo===mtEdit)used++})}
-  if(!confirm(used?`「${mtEdit}」を削除すると、${used}件の記録が「未設定」になります。よろしいですか？`
-                  :`「${mtEdit}」を削除します。よろしいですか？`))return;
+  if(!await ask(used?`「${mtEdit}」を削除すると、${used}件の記録が「未設定」になります。`
+                    :`「${mtEdit}」を削除します。`,'削除する'))return;
   await eachYear(d=>{let t=false;
     d.entries.forEach(e=>{
       if(e.method===mtEdit){e.method='';t=true}
@@ -3404,7 +3671,7 @@ $('fxSave').onclick=async()=>{
 };
 $('fxDel').onclick=async()=>{
   const f=fixedList().find(x=>x.id===fxEdit);if(!f)return;
-  if(!confirm(`「${f.name}」を削除します。これまでに記録された分はそのまま残り、今後は自動で作られなくなります。よろしいですか？`))return;
+  if(!await ask(`「${f.name}」を削除します。これまでに記録された分はそのまま残り、今後は自動で作られなくなります。`,'削除する'))return;
   meta.fixed=fixedList().filter(x=>x.id!==fxEdit);
   await saveMeta();closeAll();renderFixed();await render();toast('削除しました');
 };
@@ -3503,8 +3770,8 @@ $('csDel').onclick=async()=>{
   let used=0;
   for(const y of meta.years){const d=await year(y);
     d.entries.forEach(e=>{if(e.type===mgType)e.items.forEach(i=>{if(i.category===csEdit)used++})})}
-  if(!confirm(used?`「${csEdit}」を削除すると、${used}件の明細が「未分類」になります。よろしいですか？`
-                  :`「${csEdit}」を削除します。よろしいですか？`))return;
+  if(!await ask(used?`「${csEdit}」を削除すると、${used}件の明細が「未分類」になります。`
+                    :`「${csEdit}」を削除します。`,'削除する'))return;
   await eachYear(d=>{
     let t=false;
     d.entries.forEach(e=>{if(e.type===mgType)e.items.forEach(i=>{if(i.category===csEdit){i.category='未分類';t=true}})});
@@ -3577,7 +3844,7 @@ async function exportFile(name,obj){
 const pack=async ys=>{
   const data={};
   for(const y of ys)data[y]=await year(y);
-  return {app:'kakeibo',version:5,exportedAt:new Date().toISOString(),cats:meta.cats,methods:meta.methods,rates:meta.rates,defaultRate:meta.defaultRate,fixed:meta.fixed,years:ys,data};
+  return {app:'kakeibo',version:6,exportedAt:new Date().toISOString(),cats:meta.cats,methods:meta.methods,rates:meta.rates,defaultRate:meta.defaultRate,fixed:meta.fixed,templates:meta.templates,years:ys,data};
 };
 $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
@@ -3667,7 +3934,7 @@ $('impFile').onchange=async e=>{
       parsed.push(j);
     }
     const allYears=[...new Set(parsed.flatMap(j=>Object.keys(j.data)))].sort();
-    if(!confirm(`${allYears.join('・')}年のデータを読み込みます。同じ年の今のデータは上書きされます。よろしいですか？`))return;
+    if(!await ask(`${allYears.join('・')}年のデータを読み込みます。同じ年の今のデータは上書きされます。`,'読み込む'))return;
     // 設定は最も新しい書き出しのものを採用
     parsed.sort((a,b)=>String(a.exportedAt||'')<String(b.exportedAt||'')?-1:1);
     const newest=parsed[parsed.length-1];
@@ -3675,6 +3942,7 @@ $('impFile').onchange=async e=>{
     if(newest.methods){meta.methods=newest.methods;migrateMethods()}   // 旧形式なら新構造へ
     if(newest.rates){meta.rates=newest.rates;if(newest.defaultRate)meta.defaultRate=newest.defaultRate}
     if(newest.fixed)meta.fixed=newest.fixed;
+    if(newest.templates)meta.templates=newest.templates;
     await saveMeta();
     for(const j of parsed)
       for(const y of Object.keys(j.data)){cache[+y]=j.data[y];await saveYear(+y)}
@@ -3682,7 +3950,7 @@ $('impFile').onchange=async e=>{
   }catch(err){toast('このファイルは読み込めません')}
 };
 $('wipe').onclick=async()=>{
-  if(!confirm('すべての記録・予算・カテゴリ設定を消します。元に戻せません。よろしいですか？'))return;
+  if(!await ask('すべての記録・予算・カテゴリ設定を消します。元に戻せません。','すべて消す'))return;
   for(const y of meta.years)await store.set(YK(y),{entries:[],budgets:{},catBudgets:{}});
   Object.keys(cache).forEach(k=>delete cache[k]);
   meta={cats:null,years:[]};seedCats();seedMethods();await saveMeta();
@@ -3711,6 +3979,7 @@ $('wipe').onclick=async()=>{
   else if(migrateMethods())await saveMeta();
   if(!meta.rates){meta.rates=[...DEFAULT_RATES];meta.defaultRate=10;await saveMeta()}
   if(!meta.fixed){meta.fixed=[];await saveMeta()}
+  if(!meta.templates){meta.templates=[];await saveMeta()}
   else{ // 旧データ：単一の支払い方法を日付つきの形に移す
     let fp=false;
     meta.fixed.forEach(f=>{if(!f.payments){f.payments=[{from:f.start||today(),method:f.method||''}];delete f.method;fp=true}});
