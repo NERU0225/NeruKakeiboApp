@@ -791,16 +791,6 @@
     <button type="button" class="tpl-btn" id="tplUpdateBtn" hidden>テンプレを更新</button>
   </div>
   <p class="hint" id="tplFromHint" hidden style="margin:6px 2px 0"></p>
-  <div id="tplNameBox" hidden style="margin-top:10px">
-    <div class="field" style="border:none;padding:0 0 8px">
-      <label for="tplNameInput">名前</label>
-      <input type="text" id="tplNameInput" placeholder="例：セブン（アイスコーヒー）" maxlength="30" style="flex:1">
-    </div>
-    <div class="actions" style="margin:0">
-      <button class="btn btn-sub" id="tplNameCancel">やめる</button>
-      <button class="btn btn-primary" id="tplNameOk">決定</button>
-    </div>
-  </div>
   <div class="actions">
     <button class="btn btn-ghost" id="del" hidden>削除</button>
     <button class="btn btn-primary" id="saveBtn">保存</button>
@@ -864,6 +854,19 @@
     </div>
   </div>
   <div id="cardHistList"></div>
+</div>
+
+<div class="sheet" id="tplNameSheet" role="dialog" aria-modal="true" aria-label="テンプレの名前">
+  <div class="grab"></div>
+  <h3 id="tplNameTitle">テンプレの名前</h3>
+  <div class="field" style="border:none;padding:4px 0 8px">
+    <label for="tplNameInput">名前</label>
+    <input type="text" id="tplNameInput" placeholder="例：セブン（アイスコーヒー）" maxlength="30" style="flex:1">
+  </div>
+  <div class="actions">
+    <button class="btn btn-sub" id="tplNameCancel">やめる</button>
+    <button class="btn btn-primary" id="tplNameOk">決定</button>
+  </div>
 </div>
 
 <div class="sheet" id="askSheet" role="dialog" aria-modal="true" aria-label="確認">
@@ -1009,7 +1012,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v7.3';
+const APP_VERSION='v7.4';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1018,6 +1021,7 @@ const APP_VERSION='v7.3';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v8', released:'', items:[
+    ['v7.4','定型で名前を変えられない不具合を修正'],
     ['v7.3','削除などの確認を画面内で行うように（環境によって確認が出ず無反応になっていた）'],
     ['v7.2','テンプレート機能を追加。よく買う組み合わせを登録して呼び出せるように'],
     ['v7.1','品名の候補で、入力中の店での直近の金額を出すように'],
@@ -2103,7 +2107,6 @@ function openSheet(e,presetDate){
   buildSuggestIndex();
   $('storeSuggest').hidden=true;
   tplFrom=null;                       // 新しく開いたので、更新の対象はなし
-  $('tplNameBox').hidden=true;
   syncTplButtons();
   drawLines();open($('sheet'));
 }
@@ -2411,17 +2414,23 @@ function applyTemplate(t){
   drawLines();syncTplButtons();
 }
 /* 名前を入れてもらう小さな入力欄（prompt は使えない環境があるため画面内で聞く） */
-function askTplName(defaultName,onOk){
-  const box=$('tplNameBox');
+/* 名前を入れてもらう。シートは1枚だけ開くので、閉じた後に元のシートへ戻す */
+function askTplName(defaultName,onOk,backTo){
+  $('tplNameTitle').textContent=defaultName?'テンプレの名前':'テンプレの名前';
   $('tplNameInput').value=defaultName||'';
-  box.hidden=false;
+  open($('tplNameSheet'));
+  setTimeout(()=>{try{$('tplNameInput').focus()}catch(e){}},250);
   $('tplNameOk').onclick=()=>{
     const v=$('tplNameInput').value.trim();
     if(!v){toast('名前を入れてください');return}
-    box.hidden=true;onOk(v);
+    closeAll();
+    if(backTo)open($(backTo));
+    onOk(v);
   };
-  $('tplNameCancel').onclick=()=>{box.hidden=true};
-  $('tplNameInput').focus();
+  $('tplNameCancel').onclick=()=>{
+    closeAll();
+    if(backTo)open($(backTo));
+  };
 }
 $('tplSaveBtn').onclick=()=>{
   const t=currentAsTemplate();
@@ -2433,7 +2442,7 @@ $('tplSaveBtn').onclick=()=>{
     await saveMeta();
     tplFrom=null;syncTplButtons();renderTemplates();
     toast('テンプレに保存しました');
-  });
+  },'sheet');
 };
 $('tplUpdateBtn').onclick=async()=>{
   const t=currentAsTemplate();
