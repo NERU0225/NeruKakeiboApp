@@ -8,7 +8,7 @@
    バージョンを上げたら、必ず新しい内容を取り直すこと。
    ブラウザのHTTPキャッシュから古いファイルを拾わないよう cache:'reload' を使う。
 */
-const CACHE = 'kakeibo-v8.1';
+const CACHE = 'kakeibo-v9';
 const REVALIDATE_TIMEOUT = 3000;   // 裏で更新を待つ上限(ms)
 const ASSETS = [
   './',
