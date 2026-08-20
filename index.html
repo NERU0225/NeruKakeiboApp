@@ -387,6 +387,8 @@
     color:var(--blue);font-size:12px;padding:6px 10px;cursor:pointer;font-family:var(--font);margin-left:6px}
   .netbtn:disabled{opacity:.5}
   .sg-note{font-size:11px;color:var(--sub)}
+  .sg-here{display:inline-block;background:#E7F1FB;color:var(--blue);font-size:10px;
+    border-radius:4px;padding:1px 5px;margin-right:6px;vertical-align:middle}
 
   .lines{margin:6px 0 0}
   .line{background:var(--bg);border-radius:10px;padding:9px 10px;margin-bottom:8px}
@@ -1028,7 +1030,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v8';
+const APP_VERSION='v8.1';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1037,6 +1039,7 @@ const APP_VERSION='v8';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v9', released:'', items:[
+    ['v8.1','品名の候補で、その店で買ったものを上に出すように'],
   ]},
   {ver:'v8', released:'2026-08-20', items:[
     ['v7.5','集計の内訳をタップすると、その明細の一覧が見られるように'],
@@ -1220,8 +1223,11 @@ function buildSuggestIndex(){
         taxIn:i.taxIn!==false,rate:i.rate||defaultRate(),store:e.store||'',type:e.type};
       // 後の記録ほど新しいので上書き＝直近の値が残る
       Object.assign(cur,info);
-      // 同じ品でも店で値段が違うので、店ごとの直近も覚えておく
-      if(e.store)cur.byStore[e.store]={...info};
+      // 同じ品でも店で値段が違うので、店ごとの直近と回数も覚えておく
+      if(e.store){
+        const prev=cur.byStore[e.store];
+        cur.byStore[e.store]={...info,count:(prev?prev.count:0)+1};
+      }
       nc[i.name]=cur;
     });
   });
@@ -1247,15 +1253,19 @@ function matchSuggest(pool,q,exclude){
   return [...starts,...incl].slice(0,8);
 }
 /* 品名候補：現在のカテゴリに一致するものを上、それ以外を下に */
-function matchNameSuggest(q,cat){
+function matchNameSuggest(q,cat,store){
   const qq=norm(q);
   const pool=nameIndex.filter(o=>o.type===type);
   const hit=o=>{const n=norm(o.name);
     if(!qq)return true;
     return n.startsWith(qq)?1:(n.includes(qq)?2:0);};
   const scored=pool.map(o=>({o,r:hit(o)})).filter(x=>x.r);
-  const rank=x=>(x.o.category===cat?0:10)+(qq?(x.r===1?0:1):0);
-  scored.sort((a,b)=>rank(a)-rank(b)||b.o.count-a.o.count);
+  // 並び順は「その店で買ったことがある」を最優先、次にカテゴリ一致、最後に文字の一致度
+  const atStore=o=>!!(store&&o.byStore&&o.byStore[store]);
+  const rank=x=>(atStore(x.o)?0:100)+(x.o.category===cat?0:10)+(qq?(x.r===1?0:1):0);
+  // 回数も、その店での回数を優先して見る
+  const cnt=o=>atStore(o)?(o.byStore[store].count||0):(o.count||0);
+  scored.sort((a,b)=>rank(a)-rank(b)||cnt(b.o)-cnt(a.o));
   return scored.map(x=>x.o).slice(0,8);
 }
 function hilite(v,q){
@@ -2003,16 +2013,16 @@ function showNameSuggest(i){
   const box=$('lines').querySelector(`.nm-suggest[data-sgi="${i}"]`);
   if(!inp||!box)return;
   const q=inp.value;
-  const list=matchNameSuggest(q,lines[i].category);
-  if(!list.length){box.hidden=true;return}
   const curStore=$('fStore').value.trim();
+  const list=matchNameSuggest(q,lines[i].category,curStore);
+  if(!list.length){box.hidden=true;return}
   box.innerHTML=list.map(o=>{
     const d=infoForStore(o,curStore);              // その店での直近を優先
     const sameStore=!!(curStore&&o.byStore&&o.byStore[curStore]);
     const catLabel=d.category+(d.sub?' › '+d.sub:'');
     const match=d.category===lines[i].category;
     return `<button type="button" data-nm="${esc(o.name)}" data-row="${i}">
-      <span class="sg-main">${hilite(o.name,q)}
+      <span class="sg-main">${sameStore?'<span class="sg-here">この店</span>':''}${hilite(o.name,q)}
         <span class="sg-cat${match?' hit':''}">${esc(catLabel)}</span></span>
       <span class="sg-sub">${yen(d.amount||0)}${d.taxIn===false?' 税抜':''}${
         sameStore?'':(d.store?`<br><span class="sg-note">${esc(d.store)}</span>`:'')}</span>
