@@ -60,6 +60,8 @@
   .link{background:none;border:none;color:var(--blue);font-size:13px;padding:0;cursor:pointer}
   .hint{font-size:11px;color:var(--sub);margin:0;line-height:1.55}
   .warn-banner{background:#FDECEA;color:#A32A1B;font-size:12px;padding:10px 14px;text-align:center}
+  .pay-bar{background:#EAF3FF;color:#14539A}
+  .pay-bar .bb-go{background:#14539A;color:#fff}
   .backup-bar{display:flex;align-items:center;gap:8px;background:#FFF6E5;border-bottom:1px solid #F2E2C4;
     padding:9px 12px}
   .bb-text{flex:1;min-width:0;font-size:12px;color:#7A5B12;line-height:1.4}
@@ -464,6 +466,11 @@
 <body>
 <div class="app">
   <div class="warn-banner" id="warnBanner" hidden></div>
+  <div class="backup-bar pay-bar" id="payBar" hidden>
+    <div class="bb-text" id="payBarText"></div>
+    <button class="bb-go" id="payBarGo">確認する</button>
+    <button class="bb-later" id="payBarLater" aria-label="あとで">✕</button>
+  </div>
   <div class="backup-bar" id="backupBar" hidden>
     <div class="bb-text" id="backupText"></div>
     <button class="bb-go" id="backupGo">書き出す</button>
@@ -861,6 +868,25 @@
   <div id="cardHistList"></div>
 </div>
 
+<div class="sheet" id="paySheet" role="dialog" aria-modal="true" aria-label="引き落としの確認">
+  <div class="grab"></div>
+  <h3 id="payTitle">引き落としの確認</h3>
+  <p class="hint" id="paySub" style="margin:-6px 0 14px"></p>
+  <div class="field" style="border:none;padding:6px 0">
+    <label>アプリの計算</label>
+    <span class="num" id="payCalc" style="flex:1;text-align:right;font-weight:600">¥0</span>
+  </div>
+  <div class="field" style="padding:6px 0">
+    <label for="payActual">実際の金額</label>
+    <input type="number" inputmode="numeric" id="payActual" placeholder="0" style="flex:1;text-align:right">
+  </div>
+  <p class="hint" id="payDiff" style="margin:8px 2px 0"></p>
+  <div class="actions">
+    <button class="btn btn-sub" id="payLater">あとで</button>
+    <button class="btn btn-primary" id="payOk">確認した</button>
+  </div>
+</div>
+
 <div class="sheet sheet-tall" id="catHistSheet" role="dialog" aria-modal="true" aria-label="カテゴリの明細">
   <div class="grab"></div>
   <h3 id="catHistTitle">カテゴリ</h3>
@@ -1030,7 +1056,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v9';
+const APP_VERSION='v9.2';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1039,6 +1065,8 @@ const APP_VERSION='v9';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v10', released:'', items:[
+    ['v9.2','引き落とし日を過ぎたら確認を促し、実際の金額とのずれを口座残高に反映できるように'],
+    ['v9.1','カードを使った時点で口座残高が減ってしまう不具合を修正（引き落とし日を過ぎた分だけ引くように）'],
   ]},
   {ver:'v9', released:'2026-08-21', items:[
     ['v8.1','品名の候補で、その店で買ったものを上に出すように'],
@@ -3318,7 +3346,8 @@ function icBalance(name,all,upto){
 function cardWithdrawn(accountName,all,until){
   let sum=0;
   cardList().filter(m=>m.payFrom===accountName).forEach(card=>{
-    payDates(card,all,until).forEach(p=>{sum+=p.amount});
+    // payDates は未来の予定も返すので、引き落とし日を過ぎたものだけ足す
+    payDates(card,all,until).forEach(p=>{if(p.done)sum+=p.amount});
   });
   return sum;
 }
@@ -3866,6 +3895,86 @@ $('csDel').onclick=async()=>{
   await saveMeta();closeAll();await render();toast('削除しました');
 };
 
+/* ============ カード引き落としの確認 ============
+   引き落とし日を過ぎた分について、実際に引かれた金額を確認してもらう。
+   アプリの計算と実額がずれることがあるので、差額は口座の調整値に入れる。
+   確認済みかどうかは meta.payChecked に「カード名|引落し日」で記録する。 */
+const payCheckedKey=(card,date)=>card+'|'+date;
+function isPayChecked(card,date){
+  return !!(meta.payChecked&&meta.payChecked[payCheckedKey(card,date)]);
+}
+/* 引き落とし日を過ぎていて、まだ確認していないものを集める */
+async function pendingPayments(){
+  const cards=cardList().filter(c=>c.payFrom&&c.payDay);
+  if(!cards.length)return [];
+  const all=await allCardEntries();
+  const td=today();
+  const out=[];
+  cards.forEach(card=>{
+    payDates(card,all,td).forEach(p=>{
+      if(!p.done)return;                       // まだ引き落とし日が来ていない
+      if(isPayChecked(card.name,p.date))return;
+      out.push({card:card.name,payFrom:card.payFrom,date:p.date,amount:p.amount});
+    });
+  });
+  return out.sort((a,b)=>a.date<b.date?-1:1);
+}
+let payQueue=[], payCur=null;
+async function updatePayBar(){
+  payQueue=await pendingPayments();
+  const bar=$('payBar');
+  if(!payQueue.length){bar.hidden=true;return}
+  const p=payQueue[0];
+  const md=`${+p.date.slice(5,7)}/${+p.date.slice(8,10)}`;
+  $('payBarText').textContent=payQueue.length>1
+    ? `${md} ${p.card}ほか${payQueue.length-1}件の引き落としを確認してください`
+    : `${md} ${p.card}の引き落としを確認してください`;
+  bar.hidden=false;
+}
+$('payBarLater').onclick=()=>{$('payBar').hidden=true};   // 次に開いたらまた出す
+$('payBarGo').onclick=()=>openPaySheet(0);
+
+function openPaySheet(i){
+  const p=payQueue[i];
+  if(!p){closeAll();updatePayBar();return}
+  payCur={...p,index:i};
+  $('payTitle').textContent=p.card+'の引き落とし';
+  $('paySub').textContent=`${p.date.replace(/-/g,'/')} ・ ${p.payFrom}から`
+    +(payQueue.length>1?`　（${i+1}/${payQueue.length}件）`:'');
+  $('payCalc').textContent=yen(p.amount);
+  $('payActual').value=p.amount;
+  showPayDiff();
+  open($('paySheet'));
+}
+function showPayDiff(){
+  if(!payCur)return;
+  const v=Math.round(Number($('payActual').value)||0);
+  const d=v-payCur.amount;
+  $('payDiff').textContent=d===0
+    ? 'アプリの計算と同じです。'
+    : `差額 ${yen(Math.abs(d))} を「${payCur.payFrom}」の残高に反映します（${d>0?'多く引かれた':'少なく引かれた'}）。`;
+}
+$('payActual').addEventListener('input',showPayDiff);
+$('payLater').onclick=()=>{closeAll()};
+$('payOk').onclick=async()=>{
+  if(!payCur)return;
+  const v=Math.round(Number($('payActual').value)||0);
+  const diff=v-payCur.amount;
+  if(diff!==0){
+    // 実際に引かれた額に合わせる。多く引かれたなら残高を減らす
+    const m=moneyList().find(x=>x.name===payCur.payFrom);
+    if(m)m.adjust=(m.adjust||0)-diff;
+  }
+  meta.payChecked=meta.payChecked||{};
+  meta.payChecked[payCheckedKey(payCur.card,payCur.date)]={at:new Date().toISOString(),amount:v};
+  await saveMeta();
+  const next=payCur.index+1;
+  payCur=null;
+  await render();
+  if(next<payQueue.length)openPaySheet(next);
+  else{closeAll();await updatePayBar();toast('確認しました')}
+};
+
 /* ============ バックアップ ============ */
 /* バージョン履歴 */
 let verOpen=null;                 // 開いている版。null なら先頭を開く
@@ -3928,7 +4037,7 @@ async function exportFile(name,obj){
 const pack=async ys=>{
   const data={};
   for(const y of ys)data[y]=await year(y);
-  return {app:'kakeibo',version:6,exportedAt:new Date().toISOString(),cats:meta.cats,methods:meta.methods,rates:meta.rates,defaultRate:meta.defaultRate,fixed:meta.fixed,templates:meta.templates,years:ys,data};
+  return {app:'kakeibo',version:6,exportedAt:new Date().toISOString(),cats:meta.cats,methods:meta.methods,rates:meta.rates,defaultRate:meta.defaultRate,fixed:meta.fixed,templates:meta.templates,payChecked:meta.payChecked,years:ys,data};
 };
 $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
@@ -4027,6 +4136,7 @@ $('impFile').onchange=async e=>{
     if(newest.rates){meta.rates=newest.rates;if(newest.defaultRate)meta.defaultRate=newest.defaultRate}
     if(newest.fixed)meta.fixed=newest.fixed;
     if(newest.templates)meta.templates=newest.templates;
+    if(newest.payChecked)meta.payChecked=newest.payChecked;
     await saveMeta();
     for(const j of parsed)
       for(const y of Object.keys(j.data)){cache[+y]=j.data[y];await saveYear(+y)}
@@ -4064,6 +4174,7 @@ $('wipe').onclick=async()=>{
   if(!meta.rates){meta.rates=[...DEFAULT_RATES];meta.defaultRate=10;await saveMeta()}
   if(!meta.fixed){meta.fixed=[];await saveMeta()}
   if(!meta.templates){meta.templates=[];await saveMeta()}
+  if(!meta.payChecked){meta.payChecked={};await saveMeta()}
   else{ // 旧データ：単一の支払い方法を日付つきの形に移す
     let fp=false;
     meta.fixed.forEach(f=>{if(!f.payments){f.payments=[{from:f.start||today(),method:f.method||''}];delete f.method;fp=true}});
@@ -4073,6 +4184,7 @@ $('wipe').onclick=async()=>{
   const made=await generateFixed();
   await render();
   if(made)toast(`固定費を${made}件記録しました`);
+  await updatePayBar();        // 引き落とし日を過ぎた分の確認
   await updateBackupBar();
   // 更新を知らせる。前回起動時のバージョンと違っていれば、切り替わったと判断する
   // （切り替えの検知を取りこぼしても、これで確実に出る）
