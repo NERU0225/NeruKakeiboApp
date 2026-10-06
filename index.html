@@ -118,6 +118,12 @@
   .brow:first-child{border-top:none}
   .brow-t{display:flex;align-items:center;gap:8px;margin-bottom:6px}
   .brow-t .cname{font-size:14px}
+  .tb-mode{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px}
+  #tbLow{margin:8px 0 0}
+  .brow .switch.sm{width:40px;height:24px;margin-left:4px}
+  .brow .switch.sm span{width:18px;height:18px}
+  .brow .switch.sm[aria-checked=true] span{transform:translateX(16px)}
+  .brow.off .cname{color:var(--sub)}
   .brow input{width:6.2em;text-align:right;border:1px solid var(--line);border-radius:6px;
     padding:5px 7px;background:var(--bg);font-variant-numeric:tabular-nums}
 
@@ -636,6 +642,8 @@
           </div>
           <div class="bar"><i id="tbBar" style="width:0"></i></div>
           <div class="b-foot"><span id="tbUsed"></span><span id="tbLeft"></span></div>
+          <div class="tb-mode"><span class="hint" id="tbMode"></span><button type="button" class="link" id="tbApply" hidden>カテゴリ別の合計を反映</button></div>
+          <p class="bal-warn" id="tbLow" hidden></p>
         </div>
       </div>
       <div class="card">
@@ -643,6 +651,7 @@
           <p class="card-title" style="margin:0">カテゴリ別の予算</p>
           <button class="link" id="copyPrev">先月からコピー</button>
         </div>
+        <p class="hint" style="margin:-4px 0 4px">スイッチを切ったカテゴリは、支出が予算に数えられません（すべての月に共通。今月の収支には影響しません）。</p>
         <div id="catBudgets"></div>
       </div>
     </section>
@@ -1056,7 +1065,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v10';
+const APP_VERSION='v10.3';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1065,6 +1074,9 @@ const APP_VERSION='v10';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v11', released:'', items:[
+    ['v10.3','支出の合計の自動計算をやめ、「カテゴリ別の合計を反映」ボタンで入れるように'],
+    ['v10.2','予算に含める／含めないを、経費ではなくカテゴリごとに設定するように'],
+    ['v10.1','経費を予算に含めるか選べるように。支出の合計はカテゴリ別の合計から自動計算（手入力も可、下回ると注意）'],
   ]},
   {ver:'v10', released:'2026-09-22', items:[
     ['v9.3','ホームから残高を合わせたとき、ホームの表示にすぐ反映されない不具合を修正'],
@@ -1317,6 +1329,16 @@ const expSelected=new Set();        // 経費タブで選択中のID
 const STATUS={unclaimed:'申請前',claimed:'申請中',settled:'精算済'};
 const NEXT={unclaimed:'claimed',claimed:'settled'};
 const isExp=e=>e.expense&&e.type==='expense';
+/* そのカテゴリの支出を予算に数えるか（全月共通。カテゴリの noBudget で持つ）
+   カテゴリ一覧にない名前（削除後の未分類など）は数える */
+const inBudget=name=>{const c=(meta.cats.expense||[]).find(x=>x.name===name);return !(c&&c.noBudget)};
+/* その月の予算。総額は入力された値だけを使う（自動計算はしない）。
+   cs は予算に含めるカテゴリの予算の合計。「カテゴリ別の合計を反映」で総額に入れる */
+function budgetInfo(d,k){
+  const cs=Object.entries((d.catBudgets||{})[k]||{}).filter(([n])=>inBudget(n)).reduce((s,[,v])=>s+(+v||0),0);
+  const b=(d.budgets||{})[k]||0;
+  return {b,cs,low:b>0&&b<cs};
+}
 const isOutstanding=e=>isExp(e)&&e.status!=='settled';  // 未精算
 
 const $=i=>document.getElementById(i);
@@ -1548,8 +1570,19 @@ async function render(){
   });
   const bookOut=bookEs.reduce((s,e)=>s+total(e),0);
 
-  const b=d.budgets[k]||0, over=b&&out>b, pct=b?out/b*100:0;
-  $('bRemain').innerHTML=b?((over?'−':'')+yen(Math.abs(b-out))+'<small>'+(over?'超過':'残り')+'</small>'):'<small>予算が未設定です</small>';
+  // 予算タブ用：常に「表示中の月」の実支出で集計する（経費も含む）
+  // 明細ごとにカテゴリが違うので、カテゴリ別に出してから予算に数えるものだけ足す
+  const monthCatMap={};
+  es.filter(countsAsSpend).forEach(e=>{
+    const tb=taxBreakdown(e.items);
+    e.items.forEach((i,idx)=>{
+      monthCatMap[i.category]=(monthCatMap[i.category]||0)+lineSub(i)+tb.perItemTax[idx];
+    });
+  });
+  // 予算用の支出：予算に含めないカテゴリを除く（今月の収支 out は従来どおり）
+  const outB=Object.entries(monthCatMap).filter(([n])=>inBudget(n)).reduce((s,[,v])=>s+v,0);
+  const bi=budgetInfo(d,k), b=bi.b, over=b&&outB>b, pct=b?outB/b*100:0;
+  $('bRemain').innerHTML=b?((over?'−':'')+yen(Math.abs(b-outB))+'<small>'+(over?'超過':'残り')+'</small>'):'<small>予算が未設定です</small>';
   $('bRemain').classList.toggle('over',!!over);
   $('bBar').style.width=Math.min(100,pct)+'%';
   $('bBar').className=over?'over':pct>=80?'warn':'';
@@ -1565,14 +1598,6 @@ async function render(){
       map[i.category]=(map[i.category]||0)+v;
       if(i.sub){submap[i.category]=submap[i.category]||{};
         submap[i.category][i.sub]=(submap[i.category][i.sub]||0)+v}
-    });
-  });
-  // 予算タブ用：常に「表示中の月」の実支出（経費も含む）で集計する
-  const monthCatMap={};
-  es.filter(countsAsSpend).forEach(e=>{
-    const tb=taxBreakdown(e.items);
-    e.items.forEach((i,idx)=>{
-      monthCatMap[i.category]=(monthCatMap[i.category]||0)+lineSub(i)+tb.perItemTax[idx];
     });
   });
   const rows=Object.entries(map).sort((a,b)=>b[1]-a[1]);
@@ -1629,16 +1654,30 @@ async function render(){
   $('totalBudget').value=b||'';
   $('tbBar').style.width=Math.min(100,pct)+'%';
   $('tbBar').className=over?'over':pct>=80?'warn':'';
-  $('tbUsed').textContent=b?yen(out)+' 使用':'予算が未設定です';
-  $('tbLeft').textContent=b?(over?yen(out-b)+' 超過':yen(b-out)+' 残り'):'';
+  $('tbUsed').textContent=b?yen(outB)+' 使用':'予算が未設定です';
+  $('tbLeft').textContent=b?(over?yen(outB-b)+' 超過':yen(b-outB)+' 残り'):'';
+  $('tbMode').textContent=bi.cs?'カテゴリ別の合計 '+yen(bi.cs):'';
+  $('tbApply').hidden=!bi.cs||bi.b===bi.cs;
+  $('tbLow').hidden=!bi.low;
+  if(bi.low)$('tbLow').textContent=`カテゴリ別の予算の合計（${yen(bi.cs)}）より ${yen(bi.cs-b)} 少なくなっています。`;
   $('catBudgets').innerHTML=cats('expense').map(c=>{
     const cb=(d.catBudgets[k]||{})[c.name]||0, used=monthCatMap[c.name]||0;
-    const p=cb?used/cb*100:0, ov=cb&&used>cb;
+    const p=cb?used/cb*100:0, ov=cb&&used>cb, on=!c.noBudget;
+    const sw=`<button type="button" class="switch sm" role="switch" aria-checked="${on}" aria-label="${esc(c.name)}を予算に含める" data-incl="${esc(c.name)}"><span></span></button>`;
+    if(!on)return `<div class="brow off">
+      <div class="brow-t">
+        <span class="dot" style="background:${c.color}"></span>
+        <span class="cname">${esc(c.name)}</span>
+        ${sw}
+      </div>
+      <div class="b-foot"><span>${yen(used)} 使用</span><span>予算に含めない</span></div>
+    </div>`;
     return `<div class="brow">
       <div class="brow-t">
         <span class="dot" style="background:${c.color}"></span>
         <span class="cname">${esc(c.name)}</span>
         <input type="number" inputmode="numeric" min="0" placeholder="0" value="${cb||''}" data-cat="${esc(c.name)}">
+        ${sw}
       </div>
       <div class="bar"><i style="width:${Math.min(100,p)}%" class="${ov?'over':p>=80?'warn':''}"></i></div>
       <div class="b-foot"><span>${yen(used)} 使用</span><span>${cb?(ov?yen(used-cb)+' 超過':yen(cb-used)+' 残り'):'予算なし'}</span></div>
@@ -2680,6 +2719,20 @@ $('totalBudget').onchange=async e=>{
   const d=await year(Y()), v=Math.max(0,Math.floor(Number(e.target.value)||0));
   if(v>0)d.budgets[mkey(cur)]=v;else delete d.budgets[mkey(cur)];
   await saveYear(Y());await render();
+};
+/* 押したときだけ、カテゴリ別の予算の合計を支出の合計に入れる */
+$('tbApply').onclick=async()=>{
+  const d=await year(Y()), k=mkey(cur), {cs}=budgetInfo(d,k);
+  if(!cs)return;
+  d.budgets[k]=cs;
+  await saveYear(Y());await render();toast('カテゴリ別の合計を反映しました');
+};
+/* カテゴリを予算に含める／含めない。設定したカテゴリ別の金額は消さずに残す（戻したとき復活する） */
+$('catBudgets').onclick=async e=>{
+  const b=e.target.closest('[data-incl]');if(!b)return;
+  const c=(meta.cats.expense||[]).find(x=>x.name===b.dataset.incl);if(!c)return;
+  if(c.noBudget)delete c.noBudget;else c.noBudget=true;
+  await saveMeta();await render();
 };
 $('catBudgets').onchange=async e=>{
   if(!e.target.dataset.cat)return;
