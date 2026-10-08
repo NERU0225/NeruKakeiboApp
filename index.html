@@ -248,7 +248,7 @@
   .exp-summary{display:flex;text-align:center}
   .exp-summary>div{flex:1}
   .exp-summary span{display:block;font-size:11px;color:var(--sub);margin-bottom:3px}
-  .exp-summary b{font-size:17px;font-weight:600}
+  .exp-summary b{font-size:15px;font-weight:600}
   .exp-summary .remain b{color:var(--red)}
   .exp-filter{display:flex;background:var(--bg);border-radius:9px;padding:3px;margin-bottom:12px}
   .exp-filter button{flex:1;border:none;background:none;border-radius:7px;padding:8px 0;cursor:pointer;
@@ -268,6 +268,9 @@
   .stag.unclaimed{background:#E9A23B}
   .stag.claimed{background:#4C8BE8}
   .stag.settled{background:#9AA3AC}
+  .stag.preDraft{background:#A58BD8}
+  .stag.preApplied{background:#7A62C9}
+  .stag.approved{background:#2E9E7A}
   .stag.ic{background:#7B8794}
   .stag.charge{background:#38B08A}
   .item-ic .i-amt{color:var(--sub) !important;font-weight:500}
@@ -286,6 +289,13 @@
   .exp-actionbar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
     padding:12px 0 4px;margin-top:8px;display:flex;gap:8px}
   .exp-actionbar .btn{flex:1;padding:12px}
+  .exp-actionbar .btn.slim{flex:none;padding:12px 14px}
+  .exp-sub{display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 12px}
+  .exp-sub button{border:1px solid var(--line);background:none;border-radius:99px;padding:5px 12px;
+    font-size:12px;color:var(--sub);cursor:pointer;font-family:var(--font)}
+  .exp-sub button[aria-pressed=true]{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+  .exp-sub button b{font-weight:600;margin-left:4px}
+  #expDatesWrap .field label{width:5.4em}
 
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);
     border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
@@ -617,16 +627,18 @@
         <p class="card-title">立替の残額</p>
         <div class="exp-summary num">
           <div class="remain"><span>未精算</span><b id="expRemain">¥0</b></div>
-          <div><span>申請前</span><b id="expUnclaimed">¥0</b></div>
-          <div><span>申請中</span><b id="expClaimed">¥0</b></div>
+          <div><span>精算申請前</span><b id="expUnclaimed">¥0</b></div>
+          <div><span>精算申請中</span><b id="expClaimed">¥0</b></div>
+          <div><span>振込待ち</span><b id="expApproved">¥0</b></div>
         </div>
       </div>
       <div class="card">
         <div class="exp-filter" id="expFilter">
-          <button type="button" data-st="unclaimed" aria-pressed="true">申請前</button>
-          <button type="button" data-st="claimed" aria-pressed="false">申請中</button>
-          <button type="button" data-st="settled" aria-pressed="false">精算済</button>
+          <button type="button" data-grp="pre" aria-pressed="false">事前申請</button>
+          <button type="button" data-grp="claim" aria-pressed="true">精算申請</button>
+          <button type="button" data-grp="done" aria-pressed="false">精算済</button>
         </div>
+        <div class="exp-sub" id="expSub"></div>
         <div id="expList"></div>
         <div class="exp-actionbar" id="expActionbar" hidden></div>
       </div>
@@ -804,8 +816,12 @@
     <button type="button" id="expToggle" class="switch" role="switch" aria-checked="false"><span></span></button>
   </div>
   <div id="expDatesWrap" hidden>
-    <div class="field"><label for="fClaimDate">申請日</label><input type="date" id="fClaimDate"></div>
-    <div class="field"><label for="fSettleDate">精算日</label><input type="date" id="fSettleDate"></div>
+    <div class="field"><label for="fExpStatus">状態</label><select id="fExpStatus"></select></div>
+    <div class="field" data-dk="preClaimDate"><label for="fPreClaimDate">事前申請日</label><input type="date" id="fPreClaimDate"></div>
+    <div class="field" data-dk="preApproveDate"><label for="fPreApproveDate">事前承認日</label><input type="date" id="fPreApproveDate"></div>
+    <div class="field" data-dk="claimDate"><label for="fClaimDate">精算申請日</label><input type="date" id="fClaimDate"></div>
+    <div class="field" data-dk="approveDate"><label for="fApproveDate">精算承認日</label><input type="date" id="fApproveDate"></div>
+    <div class="field" data-dk="settleDate"><label for="fSettleDate">精算日</label><input type="date" id="fSettleDate"></div>
   </div>
   <div class="tpl-btns">
     <button type="button" class="tpl-btn" id="tplSaveBtn">テンプレとして保存</button>
@@ -1065,7 +1081,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v10.3';
+const APP_VERSION='v10.4';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1074,6 +1090,7 @@ const APP_VERSION='v10.3';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v11', released:'', items:[
+    ['v10.4','経費の状態を、事前申請と精算申請（承認・振込まで）に分けて管理できるように。差し戻しにも対応'],
     ['v10.3','支出の合計の自動計算をやめ、「カテゴリ別の合計を反映」ボタンで入れるように'],
     ['v10.2','予算に含める／含めないを、経費ではなくカテゴリごとに設定するように'],
     ['v10.1','経費を予算に含めるか選べるように。支出の合計はカテゴリ別の合計から自動計算（手入力も可、下回ると注意）'],
@@ -1320,14 +1337,46 @@ function hilite(v,q){
 }
 let entryExpense=false;              // 入力中の「経費」トグル状態
 let editStatus=null;                 // 編集中の記録の経費ステータス（新規はnull）
+let editPre=false;                   // 編集中の記録が事前申請を通ったか
 let bookInclExp=true;               // 家計簿タブ：経費を含むか
 let bookPeriod='month';             // グラフの集計期間：month/year/custom
 let bookBase='pay';                 // 集計の見方：pay=支払いベース / use=利用ベース
 let bookFrom='', bookTo='';         // customの開始・終了(YYYY-MM-DD)
 let expStatusFilter='unclaimed';    // 経費タブの表示状態
 const expSelected=new Set();        // 経費タブで選択中のID
-const STATUS={unclaimed:'申請前',claimed:'申請中',settled:'精算済'};
-const NEXT={unclaimed:'claimed',claimed:'settled'};
+/* 経費の状態（v10.4〜）。既存の unclaimed/claimed/settled はキーをそのまま使う。
+   事前申請なしの経費は「精算申請前」から始める。事前承認済＝精算申請前（同じ状態）。 */
+const EXP_ORDER=['preDraft','preApplied','unclaimed','claimed','approved','settled'];
+const STATUS={preDraft:'事前申請前',preApplied:'事前申請中',unclaimed:'精算申請前',
+  claimed:'精算申請中',approved:'精算承認済',settled:'精算済'};
+const STATUS_SHORT={preDraft:'申請前',preApplied:'申請中',unclaimed:'申請前',
+  claimed:'申請中',approved:'承認済',settled:'精算済'};
+const EXP_GROUPS={pre:['preDraft','preApplied'],claim:['unclaimed','claimed','approved'],done:['settled']};
+const NEXT={preDraft:'preApplied',preApplied:'unclaimed',unclaimed:'claimed',claimed:'approved',approved:'settled'};
+const NEXT_LABEL={preDraft:'事前申請中にする',preApplied:'事前承認済にする',unclaimed:'精算申請中にする',
+  claimed:'精算承認済にする',approved:'精算済にする'};
+const REJECT={preApplied:'preDraft',claimed:'unclaimed'};   // 差戻しで戻る先
+/* その状態になった日を持つ項目。状態を進めた日を記録し、戻したら後ろの段階の日付は消す
+   （再申請すると今日の日付で入り直す＝上書き） */
+const EXP_DATE={preApplied:'preClaimDate',unclaimed:'preApproveDate',claimed:'claimDate',
+  approved:'approveDate',settled:'settleDate'};
+const EXP_KEYS=['status',...Object.values(EXP_DATE)];
+const expIdx=st=>{const i=EXP_ORDER.indexOf(st||'unclaimed');return i<0?2:i};
+/* 状態を to にして日付を整える。vals はフォームで入力された日付（あれば優先）。
+   pre は事前申請を通ったか。通っていなければ事前申請日・事前承認日は作らない */
+function applyExpStatus(e,to,pre,vals,t0){
+  const i=expIdx(to);
+  e.status=to;
+  EXP_ORDER.forEach((st,j)=>{
+    const k=EXP_DATE[st];if(!k)return;
+    if(j>i){delete e[k];return}
+    if(j<=2&&!pre){delete e[k];return}
+    if(vals&&vals[k])e[k]=vals[k];
+    else if(!e[k])e[k]=t0;
+  });
+  return e;
+}
+const wentPre=e=>expIdx(e.status)<2||!!e.preClaimDate||!!e.preApproveDate;
 const isExp=e=>e.expense&&e.type==='expense';
 /* そのカテゴリの支出を予算に数えるか（全月共通。カテゴリの noBudget で持つ）
    カテゴリ一覧にない名前（削除後の未分類など）は数える */
@@ -2207,18 +2256,28 @@ function fillChargeSelect(sel){
     `</optgroup>`;
 }
 $('fMethod').onchange=()=>fillChargeSelect($('fChargeTo').value);
+const EXP_FIELD={preClaimDate:'fPreClaimDate',preApproveDate:'fPreApproveDate',claimDate:'fClaimDate',
+  approveDate:'fApproveDate',settleDate:'fSettleDate'};
 function syncExpToggle(){
   $('expToggle').setAttribute('aria-checked',entryExpense?'true':'false');
-  // 申請日・精算日欄は、経費オン かつ 既にその段階まで進んだ記録のときだけ出す
-  const showClaim=entryExpense&&(editStatus==='claimed'||editStatus==='settled');
-  const showSettle=entryExpense&&editStatus==='settled';
-  $('expDatesWrap').hidden=!(showClaim||showSettle);
-  const cf=$('fClaimDate')&&$('fClaimDate').closest('.field');
-  const sf=$('fSettleDate')&&$('fSettleDate').closest('.field');
-  if(cf)cf.style.display=showClaim?'':'none';
-  if(sf)sf.style.display=showSettle?'':'none';
+  $('expDatesWrap').hidden=!entryExpense;
+  if(!entryExpense)return;
+  const st=editStatus||'unclaimed';
+  $('fExpStatus').innerHTML=EXP_ORDER.map(k=>`<option value="${k}" ${k===st?'selected':''}>${STATUS[k]}</option>`).join('');
+  // 日付欄は、その段階まで進んでいるものだけ出す（事前申請を通っていない記録は事前の日付を出さない）
+  const i=expIdx(st), pre=editPre||i<2;
+  EXP_ORDER.forEach((k,j)=>{
+    const dk=EXP_DATE[k];if(!dk)return;
+    const f=$(EXP_FIELD[dk]).closest('.field');
+    f.style.display=(j<=i&&(j>2||pre))?'':'none';
+  });
 }
 $('expToggle').onclick=()=>{entryExpense=!entryExpense;syncExpToggle()};
+$('fExpStatus').onchange=e=>{
+  // 事前申請の段階を選んだら、以後この記録は事前申請を通ったものとして扱う
+  editStatus=e.target.value;if(expIdx(editStatus)<2)editPre=true;
+  syncExpToggle();
+};
 const today=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 const md=s=>s?(+s.slice(5,7))+'/'+(+s.slice(8,10)):'';
 function openSheet(e,presetDate){
@@ -2245,8 +2304,8 @@ function openSheet(e,presetDate){
   $('saveBtn').textContent=e?'変更を保存':'保存';
   entryExpense=e?!!e.expense:false;
   editStatus=e?(e.expense?(e.status||'unclaimed'):null):null;
-  $('fClaimDate').value=e&&e.claimDate?e.claimDate:'';
-  $('fSettleDate').value=e&&e.settleDate?e.settleDate:'';
+  editPre=!!(e&&e.expense&&wentPre(e));
+  Object.entries(EXP_FIELD).forEach(([k,id])=>$(id).value=e&&e[k]?e[k]:'');
   syncExpToggle();
   $('expToggleWrap').style.display=type==='expense'?'':'none';
   buildSuggestIndex();
@@ -2459,9 +2518,7 @@ function openDetail(en){
   if(isICPay(en))info+=`<div class="dt-row"><span>集計</span><span>含めない（チャージ時に計上済み）</span></div>`;
   if(isExp(en)){
     const st=en.status||'unclaimed';
-    const days=[`立替 ${md(en.date)}`];
-    if(en.claimDate)days.push(`申請 ${md(en.claimDate)}`);
-    if(en.settleDate)days.push(`精算 ${md(en.settleDate)}`);
+    const days=expDates(en);
     info+=`<div class="dt-row"><span>経費</span>
       <span><span class="stag ${st}">${STATUS[st]}</span>${days.join(' ・ ')}</span></div>`;
   }
@@ -2472,6 +2529,17 @@ function openDetail(en){
 }
 $('dtClose').onclick=closeAll;
 $('dtEdit').onclick=()=>{if(detailEntry)openSheet(detailEntry)};
+/* 経費の日付を時系列で並べる */
+function expDates(e){
+  const d=[];
+  if(e.preClaimDate)d.push(`事前申請 ${md(e.preClaimDate)}`);
+  if(e.preApproveDate)d.push(`事前承認 ${md(e.preApproveDate)}`);
+  d.push(`立替 ${md(e.date)}`);
+  if(e.claimDate)d.push(`申請 ${md(e.claimDate)}`);
+  if(e.approveDate)d.push(`承認 ${md(e.approveDate)}`);
+  if(e.settleDate)d.push(`精算 ${md(e.settleDate)}`);
+  return d;
+}
 /* ============ テンプレート ============
    同じ店で同じ買い物を繰り返すとき用。1レシートまるごとを覚える。 */
 const tplList=()=>meta.templates||(meta.templates=[]);
@@ -2547,7 +2615,7 @@ function applyTemplate(t){
   fillMethodSelect(t.method||'');
   fillChargeSelect(t.chargeTo||'');
   entryExpense=(type==='expense')&&!!t.expense;
-  editStatus=null;
+  editStatus=null;editPre=false;
   syncExpToggle();
   $('expToggleWrap').style.display=type==='expense'?'':'none';
   lines=(t.items||[]).map(i=>({
@@ -2665,32 +2733,20 @@ $('saveBtn').onclick=async()=>{
     const oy=await findEntryYear(editId), od=await year(oy);
     const old=od.entries.find(x=>x.id===editId);
     if(!old){toast('記録が見つかりませんでした');return}
-    const status=expense?((old&&old.status)||'unclaimed'):undefined;
-    data.status=status;
-    if(expense){
-      // 状態に応じて日付を保持（編集欄の値を優先、無ければ元の値）
-      if(status==='claimed'||status==='settled')
-        data.claimDate=$('fClaimDate').value||(old&&old.claimDate)||today();
-      if(status==='settled')
-        data.settleDate=$('fSettleDate').value||(old&&old.settleDate)||today();
-    }
+    // 経費の状態と日付（経費オフなら全部消す。状態を戻したら後ろの段階の日付も消える）
+    const ex=expFormStatus(expense,old);
     if(ny!==oy){
       od.entries=od.entries.filter(x=>x.id!==editId);await saveYear(oy);
-      const nd=await year(ny);nd.entries.push({id:editId,...data});await saveYear(ny);
+      const nd=await year(ny);nd.entries.push({id:editId,...data,...ex});await saveYear(ny);
     }else{
-      // 経費オフや状態後退で不要になった日付を掃除
       const dateChanged=old.date!==date;
       Object.assign(old,data);
       if(dateChanged)delete old.order;   // 別の日に移したら並び順はリセット
-      if(!expense){delete old.status;delete old.claimDate;delete old.settleDate}
-      else{
-        if(status==='unclaimed'){delete old.claimDate;delete old.settleDate}
-        else if(status==='claimed')delete old.settleDate;
-      }
+      EXP_KEYS.forEach(k=>delete old[k]);Object.assign(old,ex);
       await saveYear(oy);
     }
   }else{
-    if(expense)data.status='unclaimed';
+    Object.assign(data,expFormStatus(expense,null));
     const nd=await year(ny);
     // 同じ日に並び順が付いていれば、新しいものが一番上に来るよう先頭に入れる
     const sameDay=nd.entries.filter(e=>e.date===date&&e.order!==undefined);
@@ -2705,6 +2761,15 @@ $('saveBtn').onclick=async()=>{
   cur=new Date(ny,+date.slice(5,7)-1,1);
   closeAll();await render();toast(editId?'変更しました':'保存しました');
 };
+/* 入力画面の状態・日付から、保存する経費の項目を作る */
+function expFormStatus(expense,old){
+  if(!expense)return {};
+  const e={};
+  if(old)EXP_KEYS.forEach(k=>{if(old[k])e[k]=old[k]});
+  const vals={};Object.entries(EXP_FIELD).forEach(([k,id])=>{vals[k]=$(id).value});
+  const to=$('fExpStatus').value||editStatus||'unclaimed';
+  return applyExpStatus(e,to,editPre||expIdx(to)<2,vals,today());
+}
 $('del').onclick=async()=>{
   await eachYear(d=>{
     const n=d.entries.length;
@@ -2762,13 +2827,23 @@ async function allExpenses(){
 }
 async function renderExpense(){
   const all=await allExpenses();
-  const sum=st=>all.filter(e=>(e.status||'unclaimed')===st).reduce((s,e)=>s+total(e),0);
-  const un=sum('unclaimed'), cl=sum('claimed');
+  const stOf=e=>EXP_ORDER.includes(e.status)?e.status:'unclaimed';
+  const sum=sts=>all.filter(e=>sts.includes(stOf(e))).reduce((s,e)=>s+total(e),0);
+  const un=sum(['preDraft','preApplied','unclaimed']), cl=sum(['claimed']), ap=sum(['approved']);
   $('expUnclaimed').textContent=yen(un);
   $('expClaimed').textContent=yen(cl);
-  $('expRemain').textContent=yen(un+cl);
+  $('expApproved').textContent=yen(ap);
+  $('expRemain').textContent=yen(un+cl+ap);
+  // 大きな区分と、その中の状態
+  const cnt=st=>all.filter(e=>stOf(e)===st).length;
+  const grp=Object.keys(EXP_GROUPS).find(g=>EXP_GROUPS[g].includes(expStatusFilter));
+  [...$('expFilter').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.grp===grp));
+  const subs=EXP_GROUPS[grp];
+  $('expSub').hidden=subs.length<2;
+  $('expSub').innerHTML=subs.length<2?'':subs.map(st=>
+    `<button type="button" data-st="${st}" aria-pressed="${st===expStatusFilter}">${STATUS_SHORT[st]}<b>${cnt(st)}</b></button>`).join('');
 
-  const list=all.filter(e=>(e.status||'unclaimed')===expStatusFilter)
+  const list=all.filter(e=>stOf(e)===expStatusFilter)
     .sort((a,b)=>a.date<b.date?1:-1);
   $('expList').innerHTML=list.length?list.map(e=>{
     const one=e.items[0]||{};
@@ -2776,9 +2851,7 @@ async function renderExpense(){
     const title=e.store||uniq[0]||'（店名なし）';
     const sub=[one.name,uniq.join('・'),e.memo].filter(Boolean).join(' ・ ');
     const on=expSelected.has(e.id);
-    const dates=[`立替 ${md(e.date)}`];
-    if(e.claimDate)dates.push(`申請 ${md(e.claimDate)}`);
-    if(e.settleDate)dates.push(`精算 ${md(e.settleDate)}`);
+    const dates=expDates(e);
     return `<div class="exp-item">
       <button class="exp-check" data-pick="${e.id}" aria-checked="${on}">${on?'✓':''}</button>
       <div class="exp-body" data-open="${e.id}" data-y="${e._y}">
@@ -2793,22 +2866,28 @@ async function renderExpense(){
   // 一括操作バー
   const bar=$('expActionbar');
   const picks=[...expSelected];
-  if(picks.length&&expStatusFilter!=='settled'){
-    const nextLabel=expStatusFilter==='unclaimed'?'申請済にする':'精算済にする';
+  const st=expStatusFilter;
+  if(picks.length){
     bar.hidden=false;
-    bar.innerHTML=`<button class="btn btn-sub" id="expClear">選択解除</button>
-      <button class="btn btn-primary" id="expAdvance">${picks.length}件を${nextLabel}</button>`;
-  }else if(picks.length&&expStatusFilter==='settled'){
-    bar.hidden=false;
-    bar.innerHTML=`<button class="btn btn-sub" id="expClear">選択解除</button>
-      <button class="btn btn-sub" id="expBack" style="color:var(--blue)">${picks.length}件を申請中に戻す</button>`;
+    let h=`<button class="btn btn-sub slim" id="expClear">解除</button>`;
+    if(REJECT[st])h+=`<button class="btn btn-sub slim" id="expReject" style="color:var(--red)">差戻し</button>`;
+    // 差戻しボタンがあるときは横幅が足りないので件数を省く（選択はチェックで見える）
+    if(NEXT[st])h+=`<button class="btn btn-primary" id="expAdvance">${REJECT[st]?'':picks.length+'件を'}${NEXT_LABEL[st]}</button>`;
+    else h+=`<button class="btn btn-sub" id="expBack" style="color:var(--blue)">${picks.length}件を精算承認済に戻す</button>`;
+    bar.innerHTML=h;
   }else{bar.hidden=true;bar.innerHTML=''}
 }
-$('expFilter').onclick=e=>{
+/* 区分を選んだら、その中で記録がある最初の状態を開く */
+$('expFilter').onclick=async e=>{
   const b=e.target.closest('button');if(!b)return;
-  expStatusFilter=b.dataset.st;expSelected.clear();
-  [...$('expFilter').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
-  renderExpense();
+  const all=await allExpenses(), subs=EXP_GROUPS[b.dataset.grp];
+  const stOf=x=>EXP_ORDER.includes(x.status)?x.status:'unclaimed';
+  expStatusFilter=subs.find(st=>all.some(x=>stOf(x)===st))||subs[0];
+  expSelected.clear();renderExpense();
+};
+$('expSub').onclick=e=>{
+  const b=e.target.closest('[data-st]');if(!b)return;
+  expStatusFilter=b.dataset.st;expSelected.clear();renderExpense();
 };
 $('expList').onclick=async e=>{
   const pk=e.target.closest('[data-pick]');
@@ -2825,10 +2904,7 @@ async function changeStatus(ids,to){
   await eachYear(d=>{
     let t=false;
     d.entries.forEach(e=>{if(set.has(e.id)&&isExp(e)){
-      e.status=to;
-      if(to==='claimed'){if(!e.claimDate)e.claimDate=t0;delete e.settleDate}
-      else if(to==='settled'){if(!e.claimDate)e.claimDate=t0;if(!e.settleDate)e.settleDate=t0}
-      else if(to==='unclaimed'){delete e.claimDate;delete e.settleDate}
+      applyExpStatus(e,to,wentPre(e),null,t0);
       t=true;
     }});
     return t;
@@ -2839,11 +2915,16 @@ async function changeStatus(ids,to){
 $('expActionbar').onclick=async e=>{
   if(e.target.closest('#expClear')){expSelected.clear();renderExpense();return}
   if(e.target.closest('#expAdvance')){
-    await changeStatus([...expSelected],NEXT[expStatusFilter]);
-    toast('状態を変更しました');return}
+    const to=NEXT[expStatusFilter];
+    await changeStatus([...expSelected],to);
+    toast(STATUS[to]+'にしました');return}
+  if(e.target.closest('#expReject')){
+    const to=REJECT[expStatusFilter];
+    await changeStatus([...expSelected],to);
+    toast('差し戻しで'+STATUS[to]+'に戻しました');return}
   if(e.target.closest('#expBack')){
-    await changeStatus([...expSelected],'claimed');
-    toast('申請中に戻しました');return}
+    await changeStatus([...expSelected],'approved');
+    toast('精算承認済に戻しました');return}
 };
 
 /* ============ カレンダー ============ */
