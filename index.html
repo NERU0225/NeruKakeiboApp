@@ -412,6 +412,9 @@
   .line{background:var(--bg);border-radius:10px;padding:9px 10px;margin-bottom:8px}
   .line-a{display:flex;gap:8px;align-items:center;margin-bottom:7px}
   .line-a input.nm{flex:1;min-width:0;border:none;background:none;outline:none;padding:2px 0}
+  .line-mv{flex:none;width:30px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--card);
+    color:var(--sub);font-size:11px;cursor:pointer;padding:0;line-height:1}
+  .line-mv:disabled{opacity:.35;cursor:default}
   .line-b{display:flex;gap:8px;align-items:center;margin-bottom:7px}
   .line-b .qty-wrap{display:flex;align-items:center;gap:3px;color:var(--sub);font-size:13px}
   .line-b input.am{width:5.4em;text-align:right;border:none;background:none;outline:none;
@@ -1081,7 +1084,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v11';
+const APP_VERSION='v11.1';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1090,6 +1093,7 @@ const APP_VERSION='v11';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v12', released:'', items:[
+    ['v11.1','入力画面で、明細の順番を▲▼で入れ替えられるように'],
   ]},
   {ver:'v11', released:'2026-10-08', items:[
     ['v10.4','経費の状態を、事前申請と精算申請（承認・振込まで）に分けて管理できるように。差し戻しにも対応'],
@@ -2092,6 +2096,8 @@ function drawLines(){
     <div class="line">
       <div class="line-a">
         <input class="nm" data-i="${i}" data-f="name" value="${esc(l.name)}" placeholder="品名（例：海苔弁当）" maxlength="30" autocomplete="off">
+        ${lines.length>1?`<button type="button" class="line-mv" data-mv="${i}" data-dir="-1" aria-label="この明細を上へ" ${i===0?'disabled':''}>▲</button>
+        <button type="button" class="line-mv" data-mv="${i}" data-dir="1" aria-label="この明細を下へ" ${i===lines.length-1?'disabled':''}>▼</button>`:''}
       </div>
       <div class="suggest nm-suggest" data-sgi="${i}" hidden></div>
       <div class="line-b">
@@ -2184,6 +2190,15 @@ $('lines').addEventListener('change',e=>{
   }
 });
 $('lines').addEventListener('click',e=>{
+  // 明細の前後を入れ替える（入力中の値は input イベントで lines に反映済み）
+  const mv=e.target.closest('[data-mv]');
+  if(mv){const i=+mv.dataset.mv, j=i+(+mv.dataset.dir);
+    if(j<0||j>=lines.length)return;
+    [lines[i],lines[j]]=[lines[j],lines[i]];
+    drawLines();
+    const nb=$('lines').querySelector(`[data-mv="${j}"][data-dir="${mv.dataset.dir}"]`);
+    if(nb&&!nb.disabled)nb.focus({preventScroll:true});   // 続けて押せるようにボタンを追いかける
+    return}
   const tx=e.target.closest('[data-tax]');
   if(tx){const i=+tx.dataset.tax;
     lines[i].taxIn=!(lines[i].taxIn!==false);
