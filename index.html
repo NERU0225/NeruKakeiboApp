@@ -980,6 +980,17 @@
   <div class="actions"><button type="button" class="btn btn-sub" id="kbSendCancel">やめる</button></div>
 </div>
 
+<div class="sheet" id="kbDoneSheet" role="dialog" aria-modal="true" aria-label="統合しました">
+  <div class="grab"></div>
+  <h3 id="kbDoneTitle">統合しました</h3>
+  <p class="hint" id="kbDoneText" style="margin:-6px 0 10px;line-height:1.6"></p>
+  <p class="hint" style="line-height:1.6">続けて共有フォルダのファイルを、統合した内容に置き換えておくと、他の端末にも届きます。共有シートで「"ファイル"に保存」を選び、同じフォルダに保存して「置き換える」を押してください。</p>
+  <div class="actions">
+    <button type="button" class="btn btn-sub" id="kbDoneLater">あとで</button>
+    <button type="button" class="btn btn-primary" id="kbDoneSend">保存する</button>
+  </div>
+</div>
+
 <div class="sheet" id="kbRecvSheet" role="dialog" aria-modal="true" aria-label="受け取る">
   <div class="grab"></div>
   <h3>受け取る</h3>
@@ -1162,7 +1173,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v11.3';
+const APP_VERSION='v11.4';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1171,6 +1182,7 @@ const APP_VERSION='v11.3';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v12', released:'', items:[
+    ['v11.4','統合したあと、そのまま共有フォルダへ保存できるように'],
     ['v11.3','家計簿を AirDrop などで送って、受け取れるように（新しい家計簿・統合・上書き）'],
     ['v11.2','家計簿を分けられるように（個人用・家族用など）。ヘッダー左上で切り替え'],
     ['v11.1','入力画面で、明細の順番を▲▼で入れ替えられるように'],
@@ -4686,15 +4698,25 @@ $('kbSend').onclick=()=>{
   open($('kbSendSheet'));
 };
 $('kbSendCancel').onclick=()=>{closeAll();renderKbList();open($('kbSheet'))};
-$('kbSendList').onclick=async e=>{
-  const p=e.target.closest('[data-kbsend]');if(!p)return;
-  const b=kbs.list.find(x=>x.id===p.dataset.kbsend);if(!b)return;
+/* 家計簿を送るファイルにして共有シートを開く。ファイル名は毎回同じ（共有フォルダで置き換えられるように） */
+async function sendBook(b){
   if(!b.share){b.share='s'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);await saveKbs()}
   const bk=await readBook(b.id);
   const file={app:'kakeibo',kind:'share',version:1,sentAt:new Date().toISOString(),
     book:{name:b.name,share:b.share},meta:sharePart(bk.meta),data:bk.data};
   const nm=`kakeibo-share-${b.name.replace(/[\\/:*?"<>|\s]/g,'_')}.json`;
-  if(await exportFile(nm,file)){closeAll();toast(`「${b.name}」を送るファイルを作りました`)}
+  if(await exportFile(nm,file)){closeAll();toast(`「${b.name}」を送るファイルを作りました`);return true}
+  return false;
+}
+$('kbSendList').onclick=async e=>{
+  const p=e.target.closest('[data-kbsend]');if(!p)return;
+  const b=kbs.list.find(x=>x.id===p.dataset.kbsend);if(!b)return;
+  await sendBook(b);
+};
+/* 統合のあと、そのまま共有フォルダへ書き戻せるようにする（共有シートはタップから開く必要があるのでボタンにする） */
+$('kbDoneLater').onclick=closeAll;
+$('kbDoneSend').onclick=async()=>{
+  const b=kbs.list.find(x=>x.id===kbId);if(b)await sendBook(b);
 };
 
 let recv=null, recvMode='new';
@@ -4760,7 +4782,9 @@ $('kbRecvOk').onclick=async()=>{
   tb.share=share;recv=null;
   await switchBook(tid);
   const parts=[stats.added&&`追加 ${stats.added}件`,stats.updated&&`更新 ${stats.updated}件`,stats.removed&&`削除 ${stats.removed}件`].filter(Boolean);
-  toast(`「${tb.name}」に統合しました`+(parts.length?`（${parts.join('・')}）`:'（変更なし）'));
+  $('kbDoneTitle').textContent=`「${tb.name}」に統合しました`;
+  $('kbDoneText').textContent=parts.length?parts.join('・'):'変更はありませんでした';
+  open($('kbDoneSheet'));
 };
 
 /* 家計簿の名前を入れてもらう（入力欄は専用のシートに置く） */
