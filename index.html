@@ -40,6 +40,19 @@
     background:var(--bg);border:1px solid var(--line);border-radius:99px;
     padding:4px 10px;cursor:pointer;font-family:var(--font);white-space:nowrap}
   .eye:active{opacity:.6}
+  header .kb{position:absolute;left:8px;top:calc(env(safe-area-inset-top) + 4px);font-size:11px;color:var(--text);
+    background:none;border:none;padding:4px 6px;cursor:pointer;font-family:var(--font);
+    max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  header .kb::after{content:' ▾';color:var(--sub);font-size:9px}
+  .kb:active{opacity:.5}
+  .kb-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+  .kb-row:first-child{border-top:none}
+  .kb-pick{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:none;padding:4px 0;
+    cursor:pointer;font-family:var(--font);font-size:15px;color:var(--text);text-align:left}
+  .kb-pick .kb-mark{flex:none;width:18px;color:var(--blue);font-weight:700}
+  .kb-pick .kb-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kb-row .edit{background:var(--bg);border:none;border-radius:7px;color:var(--sub);font-size:12px;padding:6px 11px;cursor:pointer}
+  .kb-row .edit.del{color:var(--red)}
   .eye.off{color:#fff;background:var(--blue);border-color:var(--blue)}
   .fold-head{display:flex;align-items:center;justify-content:space-between;width:100%;
     background:none;border:none;padding:0 0 12px;cursor:pointer;font-family:var(--font);color:inherit}
@@ -496,6 +509,7 @@
     <button class="bb-later" id="backupLater" aria-label="あとで">✕</button>
   </div>
   <header>
+    <button class="kb" id="kbLabel" aria-label="家計簿の切り替え">個人用</button>
     <button class="ver" id="verLabel" aria-label="バージョン履歴"></button>
     <button class="eye" id="eyeBtn" aria-label="金額の表示切替">金額を隠す</button>
     <button id="prev" aria-label="前の月">‹</button>
@@ -731,7 +745,7 @@
       </div>
 
       <div class="card">
-        <p class="card-title">バックアップ</p>
+        <p class="card-title" id="backupTitle">バックアップ</p>
         <p class="hint" id="whereHint" style="margin-bottom:8px"></p>
         <p class="hint" id="lastBackupHint" style="margin-bottom:14px"></p>
         <div class="field" style="border:none;padding-top:0">
@@ -748,7 +762,7 @@
 
       <div class="card">
         <p class="card-title">データを消す</p>
-        <button class="link" id="wipe" style="color:var(--red)">すべてのデータを消す</button>
+        <button class="link" id="wipe" style="color:var(--red)">この家計簿のデータを消す</button>
       </div>
     </section>
   </main>
@@ -941,6 +955,34 @@
   </div>
 </div>
 
+<div class="sheet" id="kbSheet" role="dialog" aria-modal="true" aria-label="家計簿">
+  <div class="grab"></div>
+  <h3>家計簿</h3>
+  <p class="hint" style="margin:-6px 0 10px">家計簿ごとに、記録・予算・カテゴリ・お金とカード・固定費・テンプレを別々に持ちます。タップで切り替えます。</p>
+  <div id="kbList"></div>
+  <button class="addcat" id="kbAdd" style="margin-top:10px">＋ 家計簿を追加</button>
+</div>
+
+<div class="sheet" id="kbNameSheet" role="dialog" aria-modal="true" aria-label="家計簿の名前">
+  <div class="grab"></div>
+  <h3 id="kbNameTitle">家計簿を追加</h3>
+  <div class="field" style="border:none;padding:4px 0 8px">
+    <label for="kbNameInput">名前</label>
+    <input type="text" id="kbNameInput" placeholder="例：家族用" maxlength="20" style="flex:1">
+  </div>
+  <div class="exp-toggle" id="kbCopyWrap" style="margin:4px 0 12px">
+    <div>
+      <span class="exp-label">カテゴリをコピー</span>
+      <span class="exp-note" id="kbCopyNote">今の家計簿のカテゴリを引き継ぎます</span>
+    </div>
+    <button type="button" id="kbCopy" class="switch" role="switch" aria-checked="true"><span></span></button>
+  </div>
+  <div class="actions">
+    <button class="btn btn-sub" id="kbNameCancel">やめる</button>
+    <button class="btn btn-primary" id="kbNameOk">追加する</button>
+  </div>
+</div>
+
 <div class="sheet" id="askSheet" role="dialog" aria-modal="true" aria-label="確認">
   <div class="grab"></div>
   <h3 id="askTitle">確認</h3>
@@ -1084,7 +1126,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v11.1';
+const APP_VERSION='v11.2';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1093,6 +1135,7 @@ const APP_VERSION='v11.1';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v12', released:'', items:[
+    ['v11.2','家計簿を分けられるように（個人用・家族用など）。ヘッダー左上で切り替え'],
     ['v11.1','入力画面で、明細の順番を▲▼で入れ替えられるように'],
   ]},
   {ver:'v11', released:'2026-10-08', items:[
@@ -1168,7 +1211,14 @@ const CHANGELOG=[
     ['','家計簿の基本機能（収支の入力、集計、オフライン対応）'],
   ]},
 ];
-const MK='kakeibo:meta', YK=y=>'kakeibo:y:'+y;
+/* 家計簿（v11.2〜）。個人用（id:main）は従来のキーのまま使い、追加した家計簿だけ別のキーに置く。
+   こうすると既存データを動かさずに済み、過去のバックアップもそのまま読める。 */
+const KB_KEY='kakeibo:books';
+const kbPrefix=id=>id==='main'?'kakeibo:':'kakeibo:b:'+id+':';
+let kbId='main', kbs={list:[{id:'main',name:'個人用'}],cur:'main'};
+let MK='kakeibo:meta';
+const YK=y=>kbPrefix(kbId)+'y:'+y;
+const kbName=()=>(kbs.list.find(b=>b.id===kbId)||{name:'個人用'}).name;
 const DEFAULTS={
   expense:[['食費','🍚','#F2725C',['食料品','外食','飲み物','お菓子']],['日用品','🧴','#F0A03C',[]],['住居','🏠','#8B6FD4',[]],
     ['水道光熱','💡','#3EA8C4',['電気','ガス','水道']],['通信','📱','#4C8BE8',[]],['交通','🚃','#38B08A',[]],
@@ -1256,6 +1306,10 @@ const store={
   async get(k){
     if(useChat){try{const r=await window.storage.get(k);return r&&r.value?JSON.parse(r.value):null}catch(e){return null}}
     try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}
+  },
+  async del(k){
+    if(useChat){try{await window.storage.delete(k)}catch(e){}return}
+    try{localStorage.removeItem(k)}catch(e){}
   },
   async set(k,v){
     const s=JSON.stringify(v);
@@ -1482,11 +1536,40 @@ function seedCats(){
   for(const t of ['expense','income'])
     meta.cats[t]=DEFAULTS[t].map(([name,icon,color,subs])=>({name,icon,color,subs:subs?[...subs]:[]}));
 }
+/* ---- 統合のための記録（v11.2〜） ----
+   記録ごとに最後に変わった時刻 upd を持ち、消した記録は meta.tomb に {id:時刻} で残す。
+   どの画面で変えても saveYear を通るので、ここで「読んだ時との差」を見て一括で付ける。 */
+const snap={};                       // 年 → Map(id → 内容の文字列)
+const sigOf=e=>{const {upd,...r}=e;return JSON.stringify(r)};
+const snapOf=d=>new Map((d.entries||[]).map(e=>[e.id,sigOf(e)]));
 async function year(y){
-  if(!cache[y]) cache[y]=await store.get(YK(y))||{entries:[],budgets:{},catBudgets:{}};
+  if(!cache[y]){
+    cache[y]=await store.get(YK(y))||{entries:[],budgets:{},catBudgets:{}};
+    snap[y]=snapOf(cache[y]);
+  }
   return cache[y];
 }
+function trackChanges(y){
+  const d=cache[y], prev=snap[y], now=Date.now();
+  meta.tomb=meta.tomb||{};
+  if(prev){
+    const ids=new Set();
+    d.entries.forEach(e=>{
+      ids.add(e.id);
+      if(prev.get(e.id)!==sigOf(e))e.upd=now;     // 新しく増えた・変わった記録
+      delete meta.tomb[e.id];                     // 年をまたいで移した記録は削除扱いにしない
+    });
+    for(const id of prev.keys()){
+      if(ids.has(id))continue;
+      // 他の年に移っただけなら、移った先の保存で取り消される
+      const moved=Object.keys(cache).some(k=>+k!==y&&cache[k].entries.some(e=>e.id===id));
+      if(!moved)meta.tomb[id]=now;
+    }
+  }
+  snap[y]=snapOf(d);
+}
 async function saveYear(y){
+  trackChanges(y);
   await store.set(YK(y),cache[y]);
   if(!meta.years.includes(y)){meta.years.push(y);meta.years.sort()}
   await store.set(MK,meta);
@@ -1494,6 +1577,7 @@ async function saveYear(y){
 const saveMeta=()=>store.set(MK,meta);
 
 async function migrate(){
+  if(kbId!=='main')return;           // 最初期の形式は個人用にしか無い
   const old=await store.get('kakeibo:v1');
   if(!old||!old.entries)return;
   if(old.cats)meta.cats=old.cats;
@@ -4167,6 +4251,7 @@ function renderYears(){
   const sel=$('yearSel'), keep=sel.value;
   sel.innerHTML=ys.map(y=>`<option value="${y}">${y}年</option>`).join('');
   sel.value=keep&&ys.includes(+keep)?keep:Y();
+  $('backupTitle').textContent=kbs.list.length>1?`バックアップ（${kbName()}）`:'バックアップ';
   $('whereHint').textContent=useChat
     ? '保存先：このチャット環境。ダウンロードして端末で開くと、ブラウザ内（localStorage）に切り替わります。'
     : '保存先：このブラウザ（localStorage）。年ごとに分けて保存しています。履歴やサイトデータを消すと家計簿も消えるので、ときどき書き出しておくと安心です。';
@@ -4188,14 +4273,17 @@ async function exportFile(name,obj){
   setTimeout(()=>URL.revokeObjectURL(u),1500);
   return true;
 }
+/* 書き出すファイル名。個人用は従来どおり（同じ名前で上書き保存できるように）、他は家計簿名を入れる */
+const backupName=y=>kbId==='main'?`kakeibo-${y}.json`
+  :`kakeibo-${kbName().replace(/[\\/:*?"<>|\s]/g,'_')}-${y}.json`;
 const pack=async ys=>{
   const data={};
   for(const y of ys)data[y]=await year(y);
-  return {app:'kakeibo',version:6,exportedAt:new Date().toISOString(),cats:meta.cats,methods:meta.methods,rates:meta.rates,defaultRate:meta.defaultRate,fixed:meta.fixed,templates:meta.templates,payChecked:meta.payChecked,years:ys,data};
+  return {app:'kakeibo',version:6,exportedAt:new Date().toISOString(),book:{id:kbId,name:kbName()},cats:meta.cats,methods:meta.methods,rates:meta.rates,defaultRate:meta.defaultRate,fixed:meta.fixed,templates:meta.templates,payChecked:meta.payChecked,years:ys,data};
 };
 $('expOne').onclick=async()=>{
   const y=+$('yearSel').value;
-  if(await exportFile(`kakeibo-${y}.json`,await pack([y])))await afterBackup(y+'年を書き出しました',[y]);
+  if(await exportFile(backupName(y),await pack([y])))await afterBackup(y+'年を書き出しました',[y]);
 };
 
 /* ---- バックアップの記録と案内 ---- */
@@ -4264,7 +4352,7 @@ $('backupGo').onclick=async()=>{
   const done=[];
   for(const y of ys){
     // 年をまたぐ場合も、記録が残っている年をすべて書き出す
-    if(await exportFile(`kakeibo-${y}.json`,await pack([y])))done.push(y);
+    if(await exportFile(backupName(y),await pack([y])))done.push(y);
     else break;                      // 途中でキャンセルされたら中断
   }
   if(done.length)await afterBackup(done.join('年・')+'年を書き出しました',done);
@@ -4281,7 +4369,10 @@ $('impFile').onchange=async e=>{
       parsed.push(j);
     }
     const allYears=[...new Set(parsed.flatMap(j=>Object.keys(j.data)))].sort();
-    if(!await ask(`${allYears.join('・')}年のデータを読み込みます。同じ年の今のデータは上書きされます。`,'読み込む'))return;
+    // 別の家計簿から書き出したファイルなら、取り違えに気づけるよう名前を添える
+    const others=[...new Set(parsed.map(j=>j.book&&j.book.name).filter(n=>n&&n!==kbName()))];
+    const note=others.length?`（ファイルは「${others.join('」「')}」から書き出したものです）`:'';
+    if(!await ask(`「${kbName()}」に${allYears.join('・')}年のデータを読み込みます${note}。同じ年の今のデータは上書きされます。`,'読み込む'))return;
     // 設定は最も新しい書き出しのものを採用
     parsed.sort((a,b)=>String(a.exportedAt||'')<String(b.exportedAt||'')?-1:1);
     const newest=parsed[parsed.length-1];
@@ -4293,14 +4384,17 @@ $('impFile').onchange=async e=>{
     if(newest.payChecked)meta.payChecked=newest.payChecked;
     await saveMeta();
     for(const j of parsed)
-      for(const y of Object.keys(j.data)){cache[+y]=j.data[y];await saveYear(+y)}
+      for(const y of Object.keys(j.data)){
+        // 書き出した時の状態に戻すだけなので、編集・削除としては記録しない
+        cache[+y]=j.data[y];snap[+y]=snapOf(cache[+y]);await saveYear(+y)}
     await render();toast(`${allYears.length}年ぶんを読み込みました`);
   }catch(err){toast('このファイルは読み込めません')}
 };
 $('wipe').onclick=async()=>{
-  if(!await ask('すべての記録・予算・カテゴリ設定を消します。元に戻せません。','すべて消す'))return;
+  if(!await ask(`「${kbName()}」のすべての記録・予算・カテゴリ設定を消します。元に戻せません。`,'すべて消す'))return;
   for(const y of meta.years)await store.set(YK(y),{entries:[],budgets:{},catBudgets:{}});
   Object.keys(cache).forEach(k=>delete cache[k]);
+  Object.keys(snap).forEach(k=>delete snap[k]);
   meta={cats:null,years:[]};seedCats();seedMethods();await saveMeta();
   await render();toast('すべて消しました');
 };
@@ -4315,6 +4409,32 @@ $('wipe').onclick=async()=>{
     const w=$('warnBanner');w.hidden=false;
     w.textContent='このブラウザではデータを保存できません（プライベートブラウズ等）。設定を確認してください。';
   }
+  // 家計簿の一覧を読む（無ければ個人用だけ）
+  const kb=await store.get(KB_KEY);
+  if(kb&&kb.list&&kb.list.length)kbs=kb;
+  if(!kbs.list.some(b=>b.id===kbs.cur))kbs.cur='main';
+  kbId=kbs.cur;MK=kbPrefix(kbId)+'meta';
+  $('kbLabel').textContent=kbName();
+  await loadBookMeta();
+  await year(Y());
+  const made=await generateFixed();
+  await render();
+  if(made)toast(`固定費を${made}件記録しました`);
+  await updatePayBar();        // 引き落とし日を過ぎた分の確認
+  await updateBackupBar();
+  // 更新を知らせる。前回起動時のバージョンと違っていれば、切り替わったと判断する
+  // （切り替えの検知を取りこぼしても、これで確実に出る）
+  try{
+    const prev=localStorage.getItem('kakeibo:lastVersion');
+    const flagged=localStorage.getItem('kakeibo:justUpdated');
+    localStorage.removeItem('kakeibo:justUpdated');
+    localStorage.setItem('kakeibo:lastVersion',APP_VERSION);
+    if(prev&&prev!==APP_VERSION)setTimeout(()=>toast(`${APP_VERSION} に更新しました`),500);
+    else if(flagged&&!prev)setTimeout(()=>toast(`${APP_VERSION} に更新しました`),500);
+  }catch(e){}
+})();
+/* 開いている家計簿の設定を読み、足りない項目を補う（起動時と切り替え時） */
+async function loadBookMeta(){
   meta=await store.get(MK)||{cats:null,years:[]};
   if(!meta.years)meta.years=[];
   if(!meta.cats){seedCats();await migrate();await saveMeta()}
@@ -4334,23 +4454,91 @@ $('wipe').onclick=async()=>{
     meta.fixed.forEach(f=>{if(!f.payments){f.payments=[{from:f.start||today(),method:f.method||''}];delete f.method;fp=true}});
     if(fp)await saveMeta();
   }
+  if(!meta.tomb){meta.tomb={};await saveMeta()}
+}
+
+/* ============ 家計簿の切り替え ============ */
+const saveKbs=()=>store.set(KB_KEY,kbs);
+async function switchBook(id){
+  closeAll();
+  kbId=id;kbs.cur=id;MK=kbPrefix(id)+'meta';
+  await saveKbs();
+  // 前の家計簿の読み込み結果と画面の状態を捨てる（混ざらないように）
+  Object.keys(cache).forEach(k=>delete cache[k]);
+  Object.keys(snap).forEach(k=>delete snap[k]);
+  editId=null;calSelDay=null;expSelected.clear();openCats.clear();
+  billMonth=null;homeBillMonth=null;icHistName='';tplFrom=null;
+  dismissedThisSession=false;
+  $('kbLabel').textContent=kbName();
+  await loadBookMeta();
   await year(Y());
   const made=await generateFixed();
   await render();
-  if(made)toast(`固定費を${made}件記録しました`);
-  await updatePayBar();        // 引き落とし日を過ぎた分の確認
+  await updatePayBar();
   await updateBackupBar();
-  // 更新を知らせる。前回起動時のバージョンと違っていれば、切り替わったと判断する
-  // （切り替えの検知を取りこぼしても、これで確実に出る）
-  try{
-    const prev=localStorage.getItem('kakeibo:lastVersion');
-    const flagged=localStorage.getItem('kakeibo:justUpdated');
-    localStorage.removeItem('kakeibo:justUpdated');
-    localStorage.setItem('kakeibo:lastVersion',APP_VERSION);
-    if(prev&&prev!==APP_VERSION)setTimeout(()=>toast(`${APP_VERSION} に更新しました`),500);
-    else if(flagged&&!prev)setTimeout(()=>toast(`${APP_VERSION} に更新しました`),500);
-  }catch(e){}
-})();
+  toast(`「${kbName()}」に切り替えました`+(made?`（固定費を${made}件記録）`:''));
+}
+function renderKbList(){
+  $('kbList').innerHTML=kbs.list.map(b=>`<div class="kb-row">
+      <button type="button" class="kb-pick" data-kbpick="${esc(b.id)}">
+        <span class="kb-mark">${b.id===kbId?'✓':''}</span><span class="kb-nm">${esc(b.name)}</span></button>
+      <button type="button" class="edit" data-kbren="${esc(b.id)}">名前</button>
+      ${b.id==='main'?'':`<button type="button" class="edit del" data-kbdel="${esc(b.id)}">削除</button>`}
+    </div>`).join('');
+}
+$('kbLabel').onclick=()=>{renderKbList();open($('kbSheet'))};
+$('kbList').onclick=async e=>{
+  const p=e.target.closest('[data-kbpick]');
+  if(p){if(p.dataset.kbpick===kbId){closeAll();return}
+    await switchBook(p.dataset.kbpick);return}
+  const r=e.target.closest('[data-kbren]');
+  if(r){const b=kbs.list.find(x=>x.id===r.dataset.kbren);if(!b)return;
+    askKbName(b.name,false,async name=>{
+      b.name=name;await saveKbs();$('kbLabel').textContent=kbName();
+      renderKbList();open($('kbSheet'));toast('名前を変更しました');
+    });return}
+  const d=e.target.closest('[data-kbdel]');
+  if(d){const b=kbs.list.find(x=>x.id===d.dataset.kbdel);if(!b||b.id==='main')return;
+    if(!await ask(`「${b.name}」を削除します。この家計簿の記録・予算・設定はすべて消え、元に戻せません。必要なら先に書き出してください。`,'削除する')){
+      renderKbList();open($('kbSheet'));return}
+    const bm=await store.get(kbPrefix(b.id)+'meta');
+    for(const y of (bm&&bm.years)||[])await store.del(kbPrefix(b.id)+'y:'+y);
+    await store.del(kbPrefix(b.id)+'meta');
+    kbs.list=kbs.list.filter(x=>x.id!==b.id);
+    if(kbId===b.id)await switchBook('main');else await saveKbs();
+    toast(`「${b.name}」を削除しました`);return}
+};
+$('kbAdd').onclick=()=>{
+  askKbName('',true,async (name,copy)=>{
+    const id='b'+Date.now().toString(36);
+    // 新しい家計簿の設定。カテゴリだけ引き継げる（お金・カードは家計簿ごとに別の口座を登録する）
+    const nm={cats:null,years:[]};
+    if(copy&&meta.cats)nm.cats=JSON.parse(JSON.stringify(meta.cats));
+    else{const keep=meta;meta={};seedCats();nm.cats=meta.cats;meta=keep}
+    await store.set(kbPrefix(id)+'meta',nm);
+    kbs.list.push({id,name});
+    await switchBook(id);
+  });
+};
+/* 家計簿の名前を入れてもらう（入力欄は専用のシートに置く） */
+function askKbName(def,isNew,onOk){
+  $('kbNameTitle').textContent=isNew?'家計簿を追加':'名前を変更';
+  $('kbNameOk').textContent=isNew?'追加する':'変更する';
+  $('kbNameInput').value=def||'';
+  $('kbCopyWrap').hidden=!isNew;
+  $('kbCopy').setAttribute('aria-checked','true');
+  $('kbCopyNote').textContent=`「${kbName()}」のカテゴリを引き継ぎます`;
+  open($('kbNameSheet'));
+  setTimeout(()=>{try{$('kbNameInput').focus()}catch(e){}},250);
+  $('kbNameOk').onclick=()=>{
+    const v=$('kbNameInput').value.trim();
+    if(!v){toast('名前を入れてください');return}
+    if(kbs.list.some(b=>b.name===v&&b.name!==def)){toast('同じ名前の家計簿があります');return}
+    onOk(v,$('kbCopy').getAttribute('aria-checked')==='true');
+  };
+  $('kbNameCancel').onclick=()=>{closeAll();renderKbList();open($('kbSheet'))};
+}
+$('kbCopy').onclick=e=>{const b=e.currentTarget;b.setAttribute('aria-checked',b.getAttribute('aria-checked')==='true'?'false':'true')};
 </script>
 </body>
 </html>
