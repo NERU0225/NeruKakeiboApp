@@ -53,6 +53,9 @@
   .kb-pick .kb-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .kb-row .edit{background:var(--bg);border:none;border-radius:7px;color:var(--sub);font-size:12px;padding:6px 11px;cursor:pointer}
   .kb-row .edit.del{color:var(--red)}
+  .kb-io{display:flex;gap:10px;margin-top:10px}
+  .kb-io .btn{flex:1;padding:12px}
+  #kbRecvTargetField label{width:5.4em}
   .eye.off{color:#fff;background:var(--blue);border-color:var(--blue)}
   .fold-head{display:flex;align-items:center;justify-content:space-between;width:100%;
     background:none;border:none;padding:0 0 12px;cursor:pointer;font-family:var(--font);color:inherit}
@@ -961,6 +964,39 @@
   <p class="hint" style="margin:-6px 0 10px">家計簿ごとに、記録・予算・カテゴリ・お金とカード・固定費・テンプレを別々に持ちます。タップで切り替えます。</p>
   <div id="kbList"></div>
   <button class="addcat" id="kbAdd" style="margin-top:10px">＋ 家計簿を追加</button>
+  <div class="kb-io">
+    <button type="button" class="btn btn-sub" id="kbSend">送る</button>
+    <button type="button" class="btn btn-sub" id="kbRecv">受け取る</button>
+  </div>
+  <p class="hint" style="margin-top:8px">AirDrop などで別の端末とやりとりできます。受け取ったファイルは「ファイル」に保存してから「受け取る」で選びます。</p>
+  <input type="file" id="kbRecvFile" accept=".json,application/json,text/plain" hidden>
+</div>
+
+<div class="sheet" id="kbSendSheet" role="dialog" aria-modal="true" aria-label="送る家計簿">
+  <div class="grab"></div>
+  <h3>送る家計簿を選ぶ</h3>
+  <p class="hint" style="margin:-6px 0 10px">選んだ家計簿の全期間の記録と設定を、1つのファイルにして送ります。</p>
+  <div id="kbSendList"></div>
+  <div class="actions"><button type="button" class="btn btn-sub" id="kbSendCancel">やめる</button></div>
+</div>
+
+<div class="sheet" id="kbRecvSheet" role="dialog" aria-modal="true" aria-label="受け取る">
+  <div class="grab"></div>
+  <h3>受け取る</h3>
+  <p class="hint" id="kbRecvInfo" style="margin:-6px 0 12px;line-height:1.6"></p>
+  <div class="seg" id="kbRecvMode" style="margin-bottom:10px">
+    <button type="button" data-mode="new" aria-pressed="true">新しい家計簿</button>
+    <button type="button" data-mode="merge" aria-pressed="false">統合</button>
+    <button type="button" data-mode="over" aria-pressed="false">上書き</button>
+  </div>
+  <div class="field" id="kbRecvTargetField" style="border:none;padding:4px 0 8px">
+    <label for="kbRecvTarget">受け取り先</label><select id="kbRecvTarget"></select>
+  </div>
+  <p class="hint" id="kbRecvHint" style="line-height:1.6"></p>
+  <div class="actions">
+    <button type="button" class="btn btn-sub" id="kbRecvCancel">やめる</button>
+    <button type="button" class="btn btn-primary" id="kbRecvOk">受け取る</button>
+  </div>
 </div>
 
 <div class="sheet" id="kbNameSheet" role="dialog" aria-modal="true" aria-label="家計簿の名前">
@@ -1126,7 +1162,7 @@
 
 <script>
 /* ============ 定数 ============ */
-const APP_VERSION='v11.2';
+const APP_VERSION='v11.3';
 /* バージョン履歴（新しい順）。改修のたびに先頭へ1行足す */
 /* バージョン履歴
    整数版（実際に導入した版）を見出しに、その版に入った小数版を items に並べる。
@@ -1135,6 +1171,7 @@ const APP_VERSION='v11.2';
    「導入するのでバージョンアップして」と言われたら、新しい整数版に切り替える。 */
 const CHANGELOG=[
   {ver:'v12', released:'', items:[
+    ['v11.3','家計簿を AirDrop などで送って、受け取れるように（新しい家計簿・統合・上書き）'],
     ['v11.2','家計簿を分けられるように（個人用・家族用など）。ヘッダー左上で切り替え'],
     ['v11.1','入力画面で、明細の順番を▲▼で入れ替えられるように'],
   ]},
@@ -1539,9 +1576,12 @@ function seedCats(){
 /* ---- 統合のための記録（v11.2〜） ----
    記録ごとに最後に変わった時刻 upd を持ち、消した記録は meta.tomb に {id:時刻} で残す。
    どの画面で変えても saveYear を通るので、ここで「読んだ時との差」を見て一括で付ける。 */
-const snap={};                       // 年 → Map(id → 内容の文字列)
+const snap={};                       // 年 → {e:Map(id → 記録の内容), b:Map(月 → 予算の内容)}
 const sigOf=e=>{const {upd,...r}=e;return JSON.stringify(r)};
-const snapOf=d=>new Map((d.entries||[]).map(e=>[e.id,sigOf(e)]));
+const budSig=(d,k)=>JSON.stringify([(d.budgets||{})[k],(d.catBudgets||{})[k]]);
+const budMonths=d=>[...new Set([...Object.keys(d.budgets||{}),...Object.keys(d.catBudgets||{})])];
+const snapOf=d=>({e:new Map((d.entries||[]).map(e=>[e.id,sigOf(e)])),
+  b:new Map(budMonths(d).map(k=>[k,budSig(d,k)]))});
 async function year(y){
   if(!cache[y]){
     cache[y]=await store.get(YK(y))||{entries:[],budgets:{},catBudgets:{}};
@@ -1556,10 +1596,13 @@ function trackChanges(y){
     const ids=new Set();
     d.entries.forEach(e=>{
       ids.add(e.id);
-      if(prev.get(e.id)!==sigOf(e))e.upd=now;     // 新しく増えた・変わった記録
+      if(prev.e.get(e.id)!==sigOf(e))e.upd=now;   // 新しく増えた・変わった記録
       delete meta.tomb[e.id];                     // 年をまたいで移した記録は削除扱いにしない
     });
-    for(const id of prev.keys()){
+    // 予算は月ごとに変わった時刻を持つ（消した月も「変わった」として記録する）
+    const ks=new Set([...prev.b.keys(),...budMonths(d)]);
+    for(const k of ks)if(prev.b.get(k)!==budSig(d,k)){d.bupd=d.bupd||{};d.bupd[k]=now}
+    for(const id of prev.e.keys()){
       if(ids.has(id))continue;
       // 他の年に移っただけなら、移った先の保存で取り消される
       const moved=Object.keys(cache).some(k=>+k!==y&&cache[k].entries.some(e=>e.id===id));
@@ -1568,13 +1611,28 @@ function trackChanges(y){
   }
   snap[y]=snapOf(d);
 }
+/* 設定は項目ごとに、最後に変わった時刻を meta.supd に持つ（統合で新しい方を選ぶため） */
+const META_SECTIONS={
+  cats:m=>m.cats, money:m=>m.methods&&m.methods.money, card:m=>m.methods&&m.methods.card,
+  rates:m=>[m.rates,m.defaultRate], fixed:m=>m.fixed, templates:m=>m.templates, payChecked:m=>m.payChecked
+};
+let metaSnap=null;
+function trackMeta(){
+  const now=Date.now(), next={};
+  for(const [k,f] of Object.entries(META_SECTIONS)){
+    next[k]=JSON.stringify(f(meta)===undefined?null:f(meta));
+    if(metaSnap&&metaSnap[k]!==next[k]){meta.supd=meta.supd||{};meta.supd[k]=now}
+  }
+  metaSnap=next;
+}
 async function saveYear(y){
   trackChanges(y);
   await store.set(YK(y),cache[y]);
   if(!meta.years.includes(y)){meta.years.push(y);meta.years.sort()}
+  trackMeta();
   await store.set(MK,meta);
 }
-const saveMeta=()=>store.set(MK,meta);
+const saveMeta=()=>{trackMeta();return store.set(MK,meta)};
 
 async function migrate(){
   if(kbId!=='main')return;           // 最初期の形式は個人用にしか無い
@@ -4435,6 +4493,7 @@ $('wipe').onclick=async()=>{
 })();
 /* 開いている家計簿の設定を読み、足りない項目を補う（起動時と切り替え時） */
 async function loadBookMeta(){
+  metaSnap=null;                     // 読み込み直後の補完は「変更」として記録しない
   meta=await store.get(MK)||{cats:null,years:[]};
   if(!meta.years)meta.years=[];
   if(!meta.cats){seedCats();await migrate();await saveMeta()}
@@ -4455,6 +4514,7 @@ async function loadBookMeta(){
     if(fp)await saveMeta();
   }
   if(!meta.tomb){meta.tomb={};await saveMeta()}
+  metaSnap=null;trackMeta();         // ここからの変更を記録する
 }
 
 /* ============ 家計簿の切り替え ============ */
@@ -4520,6 +4580,189 @@ $('kbAdd').onclick=()=>{
     await switchBook(id);
   });
 };
+/* ============ 送る・受け取る（v11.3〜） ============
+   家計簿を1つのファイルにして AirDrop などで渡す。通信はしない（ファイルを渡すだけ）。
+   受け取る側は「新しい家計簿」「統合」「上書き」を選ぶ。
+   同じ家計簿どうしを結びつけるため、家計簿に share（共有ID）を持たせる。 */
+const SHARE_META=['cats','methods','rates','defaultRate','fixed','templates','payChecked','tomb','supd'];
+const clone=o=>o===undefined?undefined:JSON.parse(JSON.stringify(o));
+/* 保存されている家計簿をまるごと読む（開いていない家計簿も読めるように、保存場所から直接読む） */
+async function readBook(id){
+  const m=await store.get(kbPrefix(id)+'meta')||{years:[]};
+  const data={};
+  for(const y of m.years||[]){const d=await store.get(kbPrefix(id)+'y:'+y);if(d)data[y]=d}
+  return {meta:m,data};
+}
+/* 家計簿をまるごと書く。新しい内容に無い年は消す */
+async function writeBook(id,b){
+  const old=await store.get(kbPrefix(id)+'meta');
+  const ys=Object.keys(b.data).map(Number).sort();
+  for(const y of ys)await store.set(kbPrefix(id)+'y:'+y,b.data[y]);
+  for(const y of (old&&old.years)||[])if(!ys.includes(+y))await store.del(kbPrefix(id)+'y:'+y);
+  b.meta.years=ys;
+  await store.set(kbPrefix(id)+'meta',b.meta);
+}
+const countEntries=b=>Object.values(b.data).reduce((s,d)=>s+((d&&d.entries)||[]).length,0);
+/* 送る側：共有できる設定だけを持っていく（バックアップの記録などはその端末のもの） */
+function sharePart(m){const o={};SHARE_META.forEach(k=>{if(m[k]!==undefined)o[k]=clone(m[k])});return o}
+
+/* ---- 統合 ----
+   L=受け取る側、R=受け取ったファイル。どちらの端末で受け取っても同じ結果になるようにする。
+   ・記録：同じidは upd（最後に変わった時刻）が新しい方。同時刻なら受け取る側
+   ・削除：tomb の時刻が記録の upd 以降なら消す。削除の後に編集されていれば残す
+   ・固定費：両方の端末で自動記録されて重複するので、同じ固定費・同じ日は id の小さい方だけ残す
+   ・予算：月ごとに bupd の新しい方
+   ・設定：項目（カテゴリ／お金／カード／税率／固定費／テンプレ／引き落とし確認）ごとに supd の新しい方 */
+function mergeBooks(L,R){
+  const now=Date.now();
+  const tomb={...(L.meta.tomb||{})};
+  for(const [id,t] of Object.entries(R.meta.tomb||{}))tomb[id]=Math.max(tomb[id]||0,t);
+  const all=b=>{const m=new Map();Object.values(b.data).forEach(d=>(d.entries||[]).forEach(e=>m.set(String(e.id),e)));return m};
+  const le=all(L), re=all(R), out=new Map();
+  const st={added:0,updated:0,removed:0};
+  for(const id of new Set([...le.keys(),...re.keys()])){
+    const l=le.get(id), r=re.get(id);
+    let e=l&&r?(((r.upd||0)>(l.upd||0))?r:l):(l||r);
+    if(tomb[id]!==undefined){
+      if(tomb[id]>=(e.upd||0)){if(l)st.removed++;continue}
+      delete tomb[id];                          // 削除の後に編集された記録は残す
+    }
+    if(!l)st.added++;else if(e===r&&sigOf(r)!==sigOf(l))st.updated++;
+    out.set(id,clone(e));
+  }
+  // 固定費の重複（両方の端末で同じ日の固定費が自動記録されたもの）
+  const fx=new Map();
+  for(const [id,e] of out){if(!e.fixedId)continue;
+    const k=e.fixedId+'|'+e.date;(fx.get(k)||fx.set(k,[]).get(k)).push(id)}
+  for(const ids of fx.values()){
+    if(ids.length<2)continue;
+    ids.sort((a,b)=>Number(a)-Number(b));
+    ids.slice(1).forEach(id=>{
+      const e=out.get(id);tomb[id]=Math.max(now,(e.upd||0)+1);
+      if(le.has(id))st.removed++;else st.added--;
+      out.delete(id);
+    });
+  }
+  // 年ごとに振り分け、予算を月ごとにまとめる
+  const data={};
+  const slot=y=>data[y]=data[y]||{entries:[],budgets:{},catBudgets:{}};
+  for(const e of out.values())slot(+e.date.slice(0,4)).entries.push(e);
+  for(const y of new Set([...Object.keys(L.data),...Object.keys(R.data)])){
+    const ld=L.data[y]||{}, rd=R.data[y]||{};
+    const ms=new Set([...budMonths(ld),...budMonths(rd),...Object.keys(ld.bupd||{}),...Object.keys(rd.bupd||{})]);
+    if(!ms.size)continue;
+    const d=slot(+y);
+    for(const k of ms){
+      const lt=(ld.bupd||{})[k]||0, rt=(rd.bupd||{})[k]||0, src=rt>lt?rd:ld;
+      if((src.budgets||{})[k]!==undefined)d.budgets[k]=clone(src.budgets[k]);
+      if((src.catBudgets||{})[k]!==undefined)d.catBudgets[k]=clone(src.catBudgets[k]);
+      if(lt||rt){d.bupd=d.bupd||{};d.bupd[k]=Math.max(lt,rt)}
+    }
+  }
+  Object.values(data).forEach(d=>d.entries.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:Number(a.id)-Number(b.id)));
+  // 設定
+  const meta=clone(L.meta);
+  meta.supd=meta.supd||{};meta.methods=meta.methods||{};
+  const lsu=L.meta.supd||{}, rsu=R.meta.supd||{}, rm=R.meta;
+  const take={cats:()=>{meta.cats=clone(rm.cats)}, money:()=>{meta.methods.money=clone((rm.methods||{}).money)},
+    card:()=>{meta.methods.card=clone((rm.methods||{}).card)},
+    rates:()=>{meta.rates=clone(rm.rates);meta.defaultRate=rm.defaultRate},
+    fixed:()=>{meta.fixed=clone(rm.fixed)}, templates:()=>{meta.templates=clone(rm.templates)},
+    payChecked:()=>{meta.payChecked=clone(rm.payChecked)}};
+  for(const k of Object.keys(META_SECTIONS)){
+    const lt=lsu[k]||0, rt=rsu[k]||0;
+    if(rt>lt&&take[k])take[k]();
+    if(lt||rt)meta.supd[k]=Math.max(lt,rt);
+  }
+  meta.tomb=tomb;
+  return {book:{meta,data},stats:st};
+}
+
+$('kbSend').onclick=()=>{
+  $('kbSendList').innerHTML=kbs.list.map(b=>`<div class="kb-row">
+      <button type="button" class="kb-pick" data-kbsend="${esc(b.id)}">
+        <span class="kb-mark">${b.id===kbId?'✓':''}</span><span class="kb-nm">${esc(b.name)}</span></button>
+    </div>`).join('');
+  open($('kbSendSheet'));
+};
+$('kbSendCancel').onclick=()=>{closeAll();renderKbList();open($('kbSheet'))};
+$('kbSendList').onclick=async e=>{
+  const p=e.target.closest('[data-kbsend]');if(!p)return;
+  const b=kbs.list.find(x=>x.id===p.dataset.kbsend);if(!b)return;
+  if(!b.share){b.share='s'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);await saveKbs()}
+  const bk=await readBook(b.id);
+  const file={app:'kakeibo',kind:'share',version:1,sentAt:new Date().toISOString(),
+    book:{name:b.name,share:b.share},meta:sharePart(bk.meta),data:bk.data};
+  const nm=`kakeibo-share-${b.name.replace(/[\\/:*?"<>|\s]/g,'_')}.json`;
+  if(await exportFile(nm,file)){closeAll();toast(`「${b.name}」を送るファイルを作りました`)}
+};
+
+let recv=null, recvMode='new';
+$('kbRecv').onclick=()=>$('kbRecvFile').click();
+$('kbRecvFile').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  let j=null;
+  try{j=JSON.parse(await f.text())}catch(err){}
+  if(!j||j.app!=='kakeibo'){toast('このファイルは受け取れません');return}
+  if(j.kind!=='share'||!j.meta||!j.data){toast('バックアップのファイルです。設定の「読み込む」から読み込めます');return}
+  recv=j;
+  const linked=kbs.list.find(b=>b.share&&b.share===j.book.share)||kbs.list.find(b=>b.name===j.book.name);
+  recvMode=linked?'merge':'new';
+  $('kbRecvTarget').innerHTML=kbs.list.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('');
+  $('kbRecvTarget').value=(linked||kbs.list.find(b=>b.id===kbId)).id;
+  const t=new Date(j.sentAt);
+  $('kbRecvInfo').textContent=`「${j.book.name}」・ 記録 ${countEntries(j).toLocaleString('ja-JP')}件 ・ `+
+    `${t.getMonth()+1}/${t.getDate()} ${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')} に作成`;
+  syncRecv();open($('kbRecvSheet'));
+};
+function recvNewName(){
+  let n=recv.book.name||'受け取った家計簿', i=2;
+  while(kbs.list.some(b=>b.name===n))n=`${recv.book.name}（${i++}）`;
+  return n;
+}
+function syncRecv(){
+  [...$('kbRecvMode').children].forEach(x=>x.setAttribute('aria-pressed',x.dataset.mode===recvMode));
+  $('kbRecvTargetField').hidden=recvMode==='new';
+  const tn=(kbs.list.find(b=>b.id===$('kbRecvTarget').value)||{}).name||'';
+  $('kbRecvHint').textContent=recvMode==='new'
+    ? `「${recvNewName()}」という名前の家計簿として追加します。今ある家計簿は変わりません。`
+    : recvMode==='merge'
+    ? `「${tn}」と受け取った内容の両方を残します。同じ記録は後から編集した方を、削除した記録は削除を優先します。カテゴリ・お金・カードなどの設定は、後から変更した方を使います。`
+    : `「${tn}」の中身を、受け取った内容に置き換えます。「${tn}」にしかない記録は消えます。`;
+  $('kbRecvOk').textContent=recvMode==='new'?'追加する':recvMode==='merge'?'統合する':'上書きする';
+}
+$('kbRecvMode').onclick=e=>{const b=e.target.closest('[data-mode]');if(!b)return;recvMode=b.dataset.mode;syncRecv()};
+$('kbRecvTarget').onchange=syncRecv;
+$('kbRecvCancel').onclick=()=>{recv=null;closeAll()};
+$('kbRecvOk').onclick=async()=>{
+  if(!recv)return;
+  const R={meta:clone(recv.meta),data:clone(recv.data)}, share=recv.book.share;
+  if(recvMode==='new'){
+    const id='b'+Date.now().toString(36), name=recvNewName();
+    await writeBook(id,{meta:R.meta,data:R.data});
+    kbs.list.push({id,name,share});recv=null;
+    await switchBook(id);toast(`「${name}」を追加しました`);return;
+  }
+  const tid=$('kbRecvTarget').value, tb=kbs.list.find(b=>b.id===tid);if(!tb)return;
+  if(recvMode==='over'){
+    if(!await ask(`「${tb.name}」の中身を、受け取った内容に置き換えます。「${tb.name}」にしかない記録は消え、元に戻せません。`,'上書きする')){
+      open($('kbRecvSheet'));return}
+    const L=await readBook(tid);
+    const meta={...R.meta};
+    ['lastBackupAt','lastBackupCount','lastBackupCounts'].forEach(k=>{if(L.meta[k]!==undefined)meta[k]=L.meta[k]});
+    await writeBook(tid,{meta,data:R.data});
+    tb.share=share;recv=null;
+    await switchBook(tid);toast(`「${tb.name}」を上書きしました`);return;
+  }
+  const L=await readBook(tid);
+  const {book,stats}=mergeBooks(L,R);
+  await writeBook(tid,book);
+  tb.share=share;recv=null;
+  await switchBook(tid);
+  const parts=[stats.added&&`追加 ${stats.added}件`,stats.updated&&`更新 ${stats.updated}件`,stats.removed&&`削除 ${stats.removed}件`].filter(Boolean);
+  toast(`「${tb.name}」に統合しました`+(parts.length?`（${parts.join('・')}）`:'（変更なし）'));
+};
+
 /* 家計簿の名前を入れてもらう（入力欄は専用のシートに置く） */
 function askKbName(def,isNew,onOk){
   $('kbNameTitle').textContent=isNew?'家計簿を追加':'名前を変更';
